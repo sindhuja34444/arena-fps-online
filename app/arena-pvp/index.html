@@ -655,6 +655,14 @@
     height: 100%;
     background: rgba(100,200,255,0.3);
   }
+  .zone-status-sq.enemy-captured {
+    background: #660000; border-color: #ff4444;
+    box-shadow: 0 0 7px rgba(255,68,68,0.8);
+  }
+  .zone-status-sq.enemy-captured .zone-sq-fill {
+    height: 100%;
+    background: rgba(255,68,68,0.5);
+  }
 
   /* Click-to-look overlay shown when pointer lock is lost */
   #lock-overlay {
@@ -924,6 +932,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 // ─────────────────────────────────────────────
 //  SOCKET.IO  — PVP NETWORKING
@@ -939,140 +948,153 @@ socket.on("connect", () => console.log("PVP connected:", socket.id));
 const remotePlayers = {};   // id → { mesh, group, hp, shield, hpFill, nameTag, ... }
 
 // ── Build a humanoid player model (seen by opponent) ─────────────────────
+// ── Load the GLTF model for each player ──────────────────────────────────
+const _gltfLoader = new THREE.GLTFLoader();
+
+// Build a rifle by loading the Sniper GLTF model
+function buildHandRifle() {
+  const group = new THREE.Group();
+
+  // Load sniper model asynchronously
+  _gltfLoader.load('../models/Sniper_3.gltf', (gltf) => {
+    const gun = gltf.scene;
+    // Bigger scale for third-person visibility
+    gun.scale.setScalar(0.32);
+    // Rotate so barrel points along +Z (model is along X)
+    gun.rotation.set(0, -Math.PI / 2, 0);
+
+    // Brighten materials for visibility
+    gun.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.frustumCulled = false;
+        if (child.material) {
+          if (child.material.color) {
+            const c = child.material.color;
+            c.r = Math.min(1, c.r * 3 + 0.2);
+            c.g = Math.min(1, c.g * 3 + 0.2);
+            c.b = Math.min(1, c.b * 3 + 0.2);
+          }
+          if (child.material.emissive) {
+            child.material.emissive.setRGB(0.05, 0.05, 0.05);
+          }
+          if (child.material.metalness !== undefined) child.material.metalness = 0.3;
+          if (child.material.roughness !== undefined) child.material.roughness = 0.5;
+        }
+      }
+    });
+
+    group.add(gun);
+  });
+
+  return group;
+}
+
 function buildRemotePlayerModel(id) {
   const root = new THREE.Group();
 
-  const bodyMat   = new THREE.MeshLambertMaterial({ color: 0x2255cc });
-  const armorMat  = new THREE.MeshLambertMaterial({ color: 0x1133aa });
-  const darkMat   = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const visorMat  = new THREE.MeshBasicMaterial({ color: 0x00eeff });
-  const skinMat   = new THREE.MeshLambertMaterial({ color: 0xddaa77 });
-  const gunMat    = new THREE.MeshLambertMaterial({ color: 0x222222 });
-  const accentMat = new THREE.MeshBasicMaterial({ color: 0x44aaff });
+  // Damage number anchor (invisible, positioned above head)
+  const dmgAnchor = new THREE.Object3D();
+  dmgAnchor.position.set(0, 2.0, 0);
+  root.add(dmgAnchor);
 
-  // Legs
-  const legGeo = new THREE.BoxGeometry(0.18, 0.55, 0.18);
-  const leftLeg  = new THREE.Mesh(legGeo, darkMat);
-  const rightLeg = new THREE.Mesh(legGeo, darkMat);
-  leftLeg.position.set(-0.16, 0.275, 0);
-  rightLeg.position.set( 0.16, 0.275, 0);
-  root.add(leftLeg, rightLeg);
-
-  [leftLeg, rightLeg].forEach(leg => {
-    const kp = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.10, 0.20), armorMat);
-    kp.position.set(0, 0.10, 0.06); leg.add(kp);
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.12, 0.24), armorMat);
-    boot.position.set(0, -0.30, 0.03); leg.add(boot);
-  });
-
-  // Torso
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.52, 0.28), bodyMat);
-  torso.position.set(0, 0.82, 0);
-  root.add(torso);
-
-  // Chest plate
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.38, 0.08), armorMat);
-  chest.position.set(0, 0.04, 0.14); torso.add(chest);
-
-  // Glowing chest stripe
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.28, 0.02), accentMat);
-  stripe.position.set(0, 0, 0.05); chest.add(stripe);
-
-  // Shoulder pads
-  [-0.32, 0.32].forEach(sx => {
-    const sp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 0.22), armorMat);
-    sp.position.set(sx, 0.12, 0); torso.add(sp);
-  });
-
-  // Arms
-  const armGeo = new THREE.BoxGeometry(0.14, 0.44, 0.14);
-  const leftArm  = new THREE.Mesh(armGeo, bodyMat);
-  const rightArm = new THREE.Mesh(armGeo, bodyMat);
-  leftArm.position.set(-0.35, 0.78, 0);
-  rightArm.position.set( 0.35, 0.78, 0);
-  root.add(leftArm, rightArm);
-
-  // Gloves
-  [leftArm, rightArm].forEach(arm => {
-    const glove = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.15), darkMat);
-    glove.position.set(0, -0.26, 0); arm.add(glove);
-  });
-
-  // Gun held in right hand
-  const gunGrp = new THREE.Group();
-  gunGrp.position.set(0.35, 0.60, 0.22);
-  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.38), gunMat);
-  gunGrp.add(gunBody);
-  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.18), darkMat);
-  barrel.position.set(0, 0.04, 0.22); gunGrp.add(barrel);
-  root.add(gunGrp);
-
-  // Head group (rotates with pitch)
+  // Head group for headshot detection
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.42, 0);
+  headGroup.position.set(0, 1.5, 0);
+  const headHitbox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.3, 0.3),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  headGroup.add(headHitbox);
   root.add(headGroup);
 
-  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.36, 0.36), armorMat);
-  headGroup.add(helm);
-
-  // Visor
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.10, 0.06), visorMat);
-  visor.position.set(0, 0.04, 0.19); headGroup.add(visor);
-
-  // Visor glow strip
-  const visorGlow = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.03, 0.04), accentMat);
-  visorGlow.position.set(0, -0.02, 0.20); headGroup.add(visorGlow);
-
-  // Antenna
-  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6), darkMat);
-  ant.position.set(0.14, 0.26, 0); headGroup.add(ant);
-  const antTip = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), accentMat);
-  antTip.position.set(0, 0.12, 0); ant.add(antTip);
-
-  // HP bar (world-space, always faces camera)
-  const barW = 0.8;
-  const hpBg = new THREE.Mesh(
-    new THREE.PlaneGeometry(barW, 0.08),
-    new THREE.MeshBasicMaterial({ color: 0x220000, side: THREE.DoubleSide })
+  // Body hitbox for raycasting
+  const bodyHitbox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 1.4, 0.4),
+    new THREE.MeshBasicMaterial({ visible: false })
   );
-  hpBg.position.set(0, 1.95, 0);
-  root.add(hpBg);
-
-  const hpFillGeo = new THREE.PlaneGeometry(barW, 0.06);
-  hpFillGeo.translate(barW / 2, 0, 0);
-  const hpFillMat = new THREE.MeshBasicMaterial({ color: 0x2255ff, side: THREE.DoubleSide });
-  const hpFill = new THREE.Mesh(hpFillGeo, hpFillMat);
-  hpFill.position.set(-barW / 2, 0, 0.001);
-  hpBg.add(hpFill);
-
-  // Name tag (canvas texture)
-  const nameCanvas = document.createElement('canvas');
-  nameCanvas.width = 256; nameCanvas.height = 48;
-  const nameCtx = nameCanvas.getContext('2d');
-  nameCtx.fillStyle = 'rgba(0,0,0,0.6)';
-  nameCtx.fillRect(0, 0, 256, 48);
-  nameCtx.fillStyle = '#44aaff';
-  nameCtx.font = 'bold 22px Courier New';
-  nameCtx.textAlign = 'center';
-  nameCtx.fillText('PLAYER ' + id.slice(-4).toUpperCase(), 128, 32);
-  const nameTex = new THREE.CanvasTexture(nameCanvas);
-  const nameTag = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.9, 0.17),
-    new THREE.MeshBasicMaterial({ map: nameTex, transparent: true, side: THREE.DoubleSide })
-  );
-  nameTag.position.set(0, 2.12, 0);
-  root.add(nameTag);
+  bodyHitbox.position.set(0, 0.7, 0);
+  root.add(bodyHitbox);
 
   root.position.set(0, 0, 0);
   scene.add(root);
 
+  // Load the GLTF model (browser caches the file after first request)
+  _gltfLoader.load('../models/Swat.gltf', (gltf) => {
+    console.log('Swat model loaded successfully');
+    const model = gltf.scene;
+    // Scale to match game units (~1.7m tall player)
+    model.scale.setScalar(1.0);
+    model.position.set(0, 0, 0);
+
+    let rightHand = null;
+
+    // Brighten materials so the model is visible in the dark arena
+    model.traverse((child) => {
+      // Hide the pistol mesh
+      if (child.name === 'Pistol') {
+        child.visible = false;
+      }
+      // Find right wrist bone to attach rifle
+      if (child.name === 'Wrist.R' || child.name === 'Hand.R') {
+        rightHand = child;
+      }
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        child.frustumCulled = false;
+        if (child.material) {
+          child.material.side = THREE.DoubleSide;
+          // Boost the color brightness significantly
+          if (child.material.color) {
+            const c = child.material.color;
+            c.r = Math.min(1, c.r * 4 + 0.15);
+            c.g = Math.min(1, c.g * 4 + 0.15);
+            c.b = Math.min(1, c.b * 4 + 0.15);
+          }
+          // Add some emissive glow so it's always visible
+          if (child.material.emissive) {
+            child.material.emissive.setRGB(0.08, 0.06, 0.04);
+          }
+          // Reduce metalness/roughness for better light response
+          if (child.material.metalness !== undefined) child.material.metalness = 0.1;
+          if (child.material.roughness !== undefined) child.material.roughness = 0.6;
+        }
+      }
+    });
+
+    // Build a rifle and attach at upper torso, centered for two-handed hold
+    const rifle = buildHandRifle();
+    // Centered on body, at chest height, slightly forward
+    rifle.position.set(0.0, 1.10, 0.22);
+    rifle.rotation.set(0, 0, 0); // horizontal, pointing forward
+    model.add(rifle);
+
+    root.add(model);
+    root.userData.gltfModel = model;
+  }, undefined, (err) => {
+    console.error('Failed to load Swat.gltf:', err);
+    // Fallback: make hitboxes visible so player isn't invisible
+    bodyHitbox.material.visible = true;
+    bodyHitbox.material.color.setHex(0xff2200);
+    bodyHitbox.material.opacity = 0.7;
+    bodyHitbox.material.transparent = true;
+    headHitbox.material.visible = true;
+    headHitbox.material.color.setHex(0xff4400);
+  });
+
+  // Placeholder limbs for walk animation compatibility
+  const leftLeg = new THREE.Object3D();
+  const rightLeg = new THREE.Object3D();
+  const leftArm = new THREE.Object3D();
+  const rightArm = new THREE.Object3D();
+
   return {
     mesh: root, headGroup, leftLeg, rightLeg, leftArm, rightArm,
-    hpFill, hpBg, nameTag,
+    hpFill: null, hpBg: dmgAnchor, nameTag: null,
     hp: 100, shield: 100,
     walkCycle: 0,
     x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0,
-    // interpolation targets
     tx: 0, ty: 1.7, tz: 0, tyaw: 0, tpitch: 0,
     dead: false,
     id,
@@ -1086,13 +1108,9 @@ function removeRemotePlayer(id) {
   delete remotePlayers[id];
 }
 
-// ── Update remote player HP bar ───────────────────────────────────────────
+// ── Update remote player HP bar (no-op now, HP bar removed) ──────────────
 function updateRemoteHPBar(rp) {
-  const ratio = Math.max(0, rp.hp / 100);
-  rp.hpFill.scale.x = ratio;
-  rp.hpFill.material.color.setHex(
-    ratio > 0.5 ? 0x2255ff : ratio > 0.25 ? 0xffcc00 : 0xff3300
-  );
+  // No visible HP bar — damage numbers handle feedback
 }
 
 // ── Interpolate remote players each frame ────────────────────────────────
@@ -1128,9 +1146,8 @@ function updateRemotePlayers(dt) {
       rp.rightArm.rotation.x *= 0.85;
     }
 
-    // HP bar always faces camera
-    rp.hpBg.lookAt(camera.position);
-    rp.nameTag.lookAt(camera.position);
+    // Damage anchor faces camera (for number positioning)
+    if (rp.hpBg && rp.hpBg.isObject3D) rp.hpBg.lookAt(camera.position);
   }
 }
 
@@ -1188,13 +1205,7 @@ function setPVPStatus(msg, color) {
 }
 
 function updateOppHPBar(hp) {
-  const wrap = document.getElementById('pvp-opp-bar-wrap');
-  const bar  = document.getElementById('pvp-opp-hp');
-  if (!wrap || !bar) return;
-  wrap.style.display = 'flex';
-  const pct = Math.max(0, hp);
-  bar.style.width = pct + '%';
-  bar.style.background = pct > 50 ? '#2255ff' : pct > 25 ? '#ffcc00' : '#ff3300';
+  // Removed — no opponent health bar in PVP
 }
 
 // ── PVP overlay (waiting / result) ────────────────────────────────────────
@@ -1279,8 +1290,53 @@ socket.on("pvp:opponentJoined", ({ id, player }) => {
   updateOppHPBar(100);
 });
 
+// ── PVP Countdown ────────────────────────────────────────────────────────
+function showPVPCountdown(onDone) {
+  gamePaused = true; // freeze movement/shooting
+
+  let countEl = document.getElementById('pvp-countdown');
+  if (!countEl) {
+    countEl = document.createElement('div');
+    countEl.id = 'pvp-countdown';
+    countEl.style.cssText = `
+      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      font-family:'Courier New',monospace; font-size:80px; font-weight:bold;
+      color:#fff; pointer-events:none; z-index:200;
+      text-shadow: 0 0 30px rgba(255,255,255,0.6), 0 0 60px rgba(68,170,255,0.4);
+      transition: transform 0.2s, opacity 0.2s;
+    `;
+    document.body.appendChild(countEl);
+  }
+
+  let count = 3;
+  countEl.textContent = count;
+  countEl.style.opacity = '1';
+  countEl.style.transform = 'translate(-50%,-50%) scale(1.2)';
+  setTimeout(() => { countEl.style.transform = 'translate(-50%,-50%) scale(1)'; }, 100);
+
+  const interval = setInterval(() => {
+    count--;
+    if (count > 0) {
+      countEl.textContent = count;
+      countEl.style.transform = 'translate(-50%,-50%) scale(1.2)';
+      setTimeout(() => { countEl.style.transform = 'translate(-50%,-50%) scale(1)'; }, 100);
+    } else {
+      countEl.textContent = 'GO!';
+      countEl.style.color = '#44ff88';
+      countEl.style.transform = 'translate(-50%,-50%) scale(1.4)';
+      setTimeout(() => {
+        countEl.style.opacity = '0';
+        countEl.style.color = '#fff';
+      }, 400);
+      clearInterval(interval);
+      gamePaused = false; // unfreeze
+      if (onDone) onDone();
+    }
+  }, 1000);
+}
+
 socket.on("pvp:start", ({ spawn } = {}) => {
-  // Handles both initial match start and rematch
+  // Handles both initial match start and round respawn
   hidePVPOverlay();
   state.gameOver = false;
 
@@ -1297,7 +1353,6 @@ socket.on("pvp:start", ({ spawn } = {}) => {
     rp.dead = false;
     rp.hp = 100; rp.shield = 100;
     rp.mesh.rotation.z = 0;
-    // Snap to current interpolation target (their spawn)
     rp.x = rp.tx; rp.y = rp.ty; rp.z = rp.tz;
     rp.mesh.position.set(rp.x, rp.y - 1.7, rp.z);
     updateRemoteHPBar(rp);
@@ -1310,9 +1365,15 @@ socket.on("pvp:start", ({ spawn } = {}) => {
   updateHealthUI();
   document.getElementById('low-health-vignette').style.opacity = '0';
 
-  setPVPStatus('⚔ PVP — FIGHT!', '#ff4444');
-  setTimeout(() => setPVPStatus('⚔ PVP', '#44aaff'), 2000);
+  // Show score HUD
+  updatePVPScoreHUD();
+
+  // 3-second countdown before players can move
   if (!document.pointerLockElement) canvas.requestPointerLock();
+  showPVPCountdown(() => {
+    setPVPStatus('⚔ PVP', '#44aaff');
+  });
+  setPVPStatus('GET READY', '#ffcc00');
 });
 
 socket.on("pvp:opponentMoved", ({ id, x, y, z, yaw, pitch }) => {
@@ -1347,26 +1408,73 @@ socket.on("pvp:hit", ({ shooterId, damage, headshot, hp, shield }) => {
   }
 });
 
-socket.on("pvp:hitConfirm", ({ targetId, headshot, hp }) => {
+socket.on("pvp:hitConfirm", ({ targetId, headshot, hp, shield }) => {
   // Our shot connected
   showHitmarker(headshot);
   if (headshot) Audio.headshot(); else Audio.hit();
   const rp = remotePlayers[targetId];
   if (rp) {
     rp.hp = hp;
+    rp.shield = shield || 0;
     updateRemoteHPBar(rp);
     updateOppHPBar(hp);
-    // Spawn damage number on screen
-    const proj = rp.mesh.position.clone();
-    proj.y += 1.9;
-    const sp = proj.clone().project(camera);
-    if (sp.z < 1) {
-      const sx = ( sp.x * 0.5 + 0.5) * window.innerWidth;
-      const sy = (-sp.y * 0.5 + 0.5) * window.innerHeight;
-      spawnDamageNumber({ hpBg: rp.hpBg }, damage || 25, headshot);
-    }
+    // Spawn damage number — blue if hitting shield, white if hitting HP
+    const dmg = headshot ? currentWeapon.damage * 2 : currentWeapon.damage;
+    const hitType = (shield > 0) ? 'shield' : (headshot ? 'headshot' : 'normal');
+    spawnDamageNumberPVP({ hpBg: rp.hpBg }, dmg, hitType);
   }
 });
+
+// ── PVP Score System — First to 5 wins ───────────────────────────────────
+let pvpMyScore  = 0;
+let pvpOppScore = 0;
+const PVP_WIN_SCORE = 5;
+
+function updatePVPScoreHUD() {
+  ensurePVPHud();
+  let scoreEl = document.getElementById('pvp-score-hud');
+  if (!scoreEl) {
+    scoreEl = document.createElement('div');
+    scoreEl.id = 'pvp-score-hud';
+    scoreEl.style.cssText = `
+      position:fixed; top:50px; left:50%; transform:translateX(-50%);
+      display:flex; align-items:center; gap:20px;
+      font-family:'Courier New',monospace; pointer-events:none; z-index:60;
+    `;
+    document.body.appendChild(scoreEl);
+  }
+  scoreEl.innerHTML = `
+    <div style="text-align:center;">
+      <div style="font-size:28px;font-weight:bold;color:#44ff88;">${pvpMyScore}</div>
+      <div style="font-size:8px;letter-spacing:2px;color:rgba(255,255,255,0.4);">YOU</div>
+    </div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.3);letter-spacing:4px;">—</div>
+    <div style="text-align:center;">
+      <div style="font-size:28px;font-weight:bold;color:#ff4444;">${pvpOppScore}</div>
+      <div style="font-size:8px;letter-spacing:2px;color:rgba(255,255,255,0.4);">OPP</div>
+    </div>
+  `;
+  scoreEl.style.display = 'flex';
+}
+
+function showRoundResult(text, color) {
+  let el = document.getElementById('pvp-round-msg');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pvp-round-msg';
+    el.style.cssText = `
+      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      font-family:'Courier New',monospace; font-size:36px; font-weight:bold;
+      letter-spacing:8px; text-transform:uppercase; pointer-events:none; z-index:100;
+      text-shadow:0 0 20px currentColor; opacity:0; transition:opacity 0.3s;
+    `;
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.color = color;
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 1800);
+}
 
 socket.on("pvp:playerDied", ({ deadId, killerId }) => {
   const isSelf   = deadId   === socket.id;
@@ -1379,38 +1487,57 @@ socket.on("pvp:playerDied", ({ deadId, killerId }) => {
     rp.mesh.position.y -= 0.6;
   }
 
+  // Update scores
   if (isKiller) {
+    pvpMyScore++;
     Audio.kill();
     Audio.points();
+    showRoundResult('+1 KILL', '#44ff88');
   } else if (isSelf) {
-    Audio.gameOver();
+    pvpOppScore++;
+    Audio.playerHit();
+    showRoundResult('YOU DIED', '#ff4444');
     state.gameOver = true;
   }
+  updatePVPScoreHUD();
 
-  const resultHtml = isKiller
-    ? `<div style="font-size:48px;letter-spacing:8px;color:#ffcc00;margin-bottom:8px;">VICTORY</div>
-       <div style="font-size:14px;letter-spacing:3px;color:#888;">YOU ELIMINATED YOUR OPPONENT</div>`
-    : `<div style="font-size:48px;letter-spacing:8px;color:#ff3333;margin-bottom:8px;">DEFEATED</div>
-       <div style="font-size:14px;letter-spacing:3px;color:#888;">YOU WERE ELIMINATED</div>`;
+  // Check if match is over (first to 5)
+  if (pvpMyScore >= PVP_WIN_SCORE || pvpOppScore >= PVP_WIN_SCORE) {
+    const won = pvpMyScore >= PVP_WIN_SCORE;
+    const resultHtml = won
+      ? `<div style="font-size:48px;letter-spacing:8px;color:#ffcc00;margin-bottom:8px;">VICTORY</div>
+         <div style="font-size:16px;letter-spacing:3px;color:#888;">FINAL SCORE: ${pvpMyScore} — ${pvpOppScore}</div>`
+      : `<div style="font-size:48px;letter-spacing:8px;color:#ff3333;margin-bottom:8px;">DEFEATED</div>
+         <div style="font-size:16px;letter-spacing:3px;color:#888;">FINAL SCORE: ${pvpMyScore} — ${pvpOppScore}</div>`;
 
-  document.exitPointerLock();
-  setTimeout(() => {
-    showPVPOverlay(resultHtml, [
-      { label: 'Rematch', fn: () => {
-          socket.emit("pvp:rematch");
-          showPVPOverlay(`<div style="font-size:20px;letter-spacing:4px;color:#888;font-family:'Courier New',monospace;">WAITING FOR REMATCH...</div>`);
-        }
-      },
-      { label: 'Main Menu', fn: () => {
-          hidePVPOverlay();
-          for (const id of Object.keys(remotePlayers)) removeRemotePlayer(id);
-          if (pvpHudEl) pvpHudEl.style.display = 'none';
-          document.exitPointerLock();
-          window.location.href = '../menu/menu.html';
-        }
-      },
-    ]);
-  }, 800);
+    document.exitPointerLock();
+    setTimeout(() => {
+      showPVPOverlay(resultHtml, [
+        { label: 'Rematch', fn: () => {
+            pvpMyScore = 0; pvpOppScore = 0;
+            updatePVPScoreHUD();
+            socket.emit("pvp:rematch");
+            showPVPOverlay(`<div style="font-size:20px;letter-spacing:4px;color:#888;font-family:'Courier New',monospace;">WAITING FOR REMATCH...</div>`);
+          }
+        },
+        { label: 'Main Menu', fn: () => {
+            hidePVPOverlay();
+            for (const id of Object.keys(remotePlayers)) removeRemotePlayer(id);
+            if (pvpHudEl) pvpHudEl.style.display = 'none';
+            const scoreHud = document.getElementById('pvp-score-hud');
+            if (scoreHud) scoreHud.style.display = 'none';
+            document.exitPointerLock();
+            window.location.href = '../menu/menu.html';
+          }
+        },
+      ]);
+    }, 1500);
+  } else {
+    // Round not over — respawn both players after a short delay
+    setTimeout(() => {
+      socket.emit("pvp:rematch"); // triggers pvp:start on server which respawns both
+    }, 2000);
+  }
 });
 
 socket.on("pvp:opponentLeft", ({ id }) => {
@@ -2448,7 +2575,7 @@ let szRegenAccum = 0;
 //  CAPTURE ZONE SYSTEM
 // ─────────────────────────────────────────────
 const CAPTURE_ZONE_RADIUS   = 4;
-const CAPTURE_TIME          = 45;      // seconds to capture
+const CAPTURE_TIME          = 10;      // seconds to capture
 const CAPTURE_SHIELD_REGEN  = 2;       // shield/sec per captured zone
 const CAPTURE_DMG_REDUCTION = 0.25;    // damage reduction per zone (max 3 zones = 0.75)
 const CAPTURE_HP_BONUS      = 20;      // HP/shield max increase per zone
@@ -2519,6 +2646,23 @@ const _czProgressFill  = document.getElementById('capture-progress-bar-fill');
 const _czSquares       = [0,1,2,3].map(i => document.getElementById('zone-sq-' + i));
 const _czFills         = [0,1,2,3].map(i => document.getElementById('zone-fill-' + i));
 
+// ── PVP: Opponent captured a zone — mark it as taken ─────────────────────
+socket.on("pvp:zoneCaptured", ({ zoneIdx }) => {
+  const cz = captureZones[zoneIdx];
+  if (!cz || cz.captured) return;
+  cz.capturedByOpponent = true;
+  cz.captureProgress = 1;
+  // Visual: turn red (enemy captured)
+  cz.floorMat.color.setHex(0x880000);
+  cz.torusMat.color.setHex(0xff4444);
+  cz.pillarMats.forEach(m => m.color.setHex(0x662222));
+  // HUD: show as enemy-captured
+  _czSquares[zoneIdx].classList.add('enemy-captured');
+  _czFills[zoneIdx].style.height = '100%';
+  _czFills[zoneIdx].style.background = 'rgba(255,68,68,0.6)';
+  addKillFeed('🔴 OPPONENT CAPTURED A ZONE!');
+});
+
 // Track how many zones are captured (used by damagePlayer & regen)
 let capturedZoneCount = 0;
 let czShieldRegenAccum = 0;
@@ -2531,6 +2675,7 @@ function resetCaptureZones() {
   SETTINGS.PLAYER_SHIELD = BASE_PLAYER_SHIELD;
   captureZones.forEach((cz, i) => {
     cz.captured = false;
+    cz.capturedByOpponent = false;
     cz.captureProgress = 0;
     cz.captureAccum = 0;
     // Reset colours to grey
@@ -2539,6 +2684,7 @@ function resetCaptureZones() {
     cz.pillarMats.forEach(m => m.color.setHex(0x555555));
     // Reset HUD squares
     _czSquares[i].classList.remove('captured');
+    _czSquares[i].classList.remove('enemy-captured');
     _czFills[i].style.height = '0%';
   });
 }
@@ -2558,7 +2704,7 @@ function updateCaptureZones(dt) {
     const dist = Math.sqrt(dx * dx + dz * dz);
     const inside = dist < CAPTURE_ZONE_RADIUS;
 
-    if (!cz.captured && inside) {
+    if (!cz.captured && !cz.capturedByOpponent && inside) {
       insideUncapturedZone = true;
       activeZoneIdx = idx;
 
@@ -2588,7 +2734,7 @@ function updateCaptureZones(dt) {
         state.playerShield = Math.min(SETTINGS.PLAYER_SHIELD, state.playerShield + CAPTURE_HP_BONUS);
         updateHealthUI();
 
-        // Visual: turn blue
+        // Visual: turn blue (player captured)
         cz.floorMat.color.setHex(0x0044ff);
         cz.torusMat.color.setHex(0x44aaff);
         cz.pillarMats.forEach(m => m.color.setHex(0x2266cc));
@@ -2598,6 +2744,9 @@ function updateCaptureZones(dt) {
         Audio.zoneCapture();
 
         addKillFeed('🔵 ZONE CAPTURED! +' + CAPTURE_HP_BONUS + ' HP/SHIELD MAX  ⚔️ DMG ×' + (1 + capturedZoneCount * 0.25).toFixed(2));
+
+        // Notify opponent in PVP
+        if (pvpMode) socket.emit("pvp:zoneCaptured", { zoneIdx: idx });
       }
     } else if (!cz.captured && !inside) {
       // Progress is preserved — player can leave and return
@@ -2610,13 +2759,32 @@ function updateCaptureZones(dt) {
     }
   });
 
+  // Check if player is inside an opponent-captured zone
+  let insideEnemyZone = false;
+  if (pvpMode) {
+    captureZones.forEach((cz) => {
+      if (!cz.capturedByOpponent) return;
+      const dx = camera.position.x - cz.pos.x;
+      const dz = camera.position.z - cz.pos.z;
+      if (Math.sqrt(dx * dx + dz * dz) < CAPTURE_ZONE_RADIUS) insideEnemyZone = true;
+    });
+  }
+
   // Show/hide capture progress bar
-  if (insideUncapturedZone && activeZoneIdx >= 0) {
+  if (insideEnemyZone) {
+    _czProgressWrap.style.display = 'flex';
+    _czProgressLabel.textContent  = '🔴 ALREADY CAPTURED BY OPPONENT';
+    _czProgressLabel.style.color  = '#ff4444';
+    _czProgressFill.style.width   = '100%';
+    _czProgressFill.style.background = 'linear-gradient(90deg, #880000, #ff4444)';
+  } else if (insideUncapturedZone && activeZoneIdx >= 0) {
     const cz = captureZones[activeZoneIdx];
     const pct = Math.round(cz.captureProgress * 100);
     _czProgressWrap.style.display = 'flex';
     _czProgressLabel.textContent  = 'CAPTURING... ' + pct + '%';
+    _czProgressLabel.style.color  = '#88ddff';
     _czProgressFill.style.width   = pct + '%';
+    _czProgressFill.style.background = 'linear-gradient(90deg, #0044ff, #44aaff)';
   } else {
     _czProgressWrap.style.display = 'none';
   }
@@ -3396,87 +3564,44 @@ function switchWeapon(weaponKey) {
 // ─────────────────────────────────────────────
 const gunGroup = new THREE.Group();
 
-const gunMetal   = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
-const darkMetal  = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-const accentMetal= new THREE.MeshLambertMaterial({ color: 0xcc1111 });
-const gripRubber = new THREE.MeshLambertMaterial({ color: 0x111111 });
+// Load the SMG GLB as the first-person viewmodel (includes arms holding gun)
+_gltfLoader.load('../models/fps_animated_smg.glb', (gltf) => {
+  const gun = gltf.scene;
+  gun.scale.setScalar(0.012);
+  gun.rotation.set(0, Math.PI, 0);
+  gun.position.set(0.02, -0.15, -0.15);
 
-const lower = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.48), gunMetal);
-lower.position.set(0, -0.01, -0.02);
-gunGroup.add(lower);
+  gun.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = false;
+      child.frustumCulled = false;
+      if (child.material) {
+        const matName = (child.material.name || '').toLowerCase();
+        if (matName.includes('arm')) {
+          child.material = new THREE.MeshLambertMaterial({ color: 0xd4a574 });
+        } else {
+          child.material = new THREE.MeshPhongMaterial({
+            color: 0xcccccc,
+            specular: 0xffffff,
+            shininess: 60,
+            emissive: 0x222222,
+          });
+        }
+      }
+    }
+  });
 
-const upper = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.50), darkMetal);
-upper.position.set(0, 0.085, -0.03);
-gunGroup.add(upper);
-
-const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.42, 12), darkMetal);
-barrel.rotation.x = Math.PI / 2;
-barrel.position.set(0, 0.06, -0.35);
-gunGroup.add(barrel);
-
-const shroud = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), accentMetal);
-shroud.position.set(0, 0.04, -0.22);
-gunGroup.add(shroud);
-
-const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.028, 0.05, 8), accentMetal);
-brake.rotation.x = Math.PI / 2;
-brake.position.set(0, 0.06, -0.58);
-gunGroup.add(brake);
-
-const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.10), gripRubber);
-grip.position.set(0, -0.14, 0.08);
-grip.rotation.x = 0.25;
-gunGroup.add(grip);
-
-const tg = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.008, 8, 16, Math.PI), darkMetal);
-tg.rotation.z = Math.PI;
-tg.position.set(0, -0.06, 0.02);
-gunGroup.add(tg);
-
-const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.02), accentMetal);
-trigger.position.set(0, -0.055, 0.01);
-gunGroup.add(trigger);
-
-const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.08), darkMetal);
-mag.position.set(0, -0.18, 0.03);
-gunGroup.add(mag);
-
-const magBase = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.09), accentMetal);
-magBase.position.set(0, -0.27, 0.03);
-gunGroup.add(magBase);
-
-const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.015, 0.38), accentMetal);
-rail.position.set(0, 0.115, -0.08);
-gunGroup.add(rail);
-
-const sightR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.015), darkMetal);
-sightR.position.set(0, 0.13, 0.08);
-gunGroup.add(sightR);
-
-[-0.015, 0.015].forEach(x => {
-  const post = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.025, 0.008), accentMetal);
-  post.position.set(x, 0.025, 0);
-  sightR.add(post);
+  gunGroup.add(gun);
+}, undefined, (err) => {
+  console.error('Failed to load SMG viewmodel:', err);
+  const fallback = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 0.08, 0.50),
+    new THREE.MeshLambertMaterial({ color: 0x333333 })
+  );
+  gunGroup.add(fallback);
 });
 
-const sightF = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.01), accentMetal);
-sightF.position.set(0, 0.13, -0.42);
-gunGroup.add(sightF);
-
-const port = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.03, 0.08), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-port.position.set(0.042, 0.085, 0.05);
-gunGroup.add(port);
-
-const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 8), darkMetal);
-stock.rotation.z = Math.PI / 2;
-stock.position.set(0, 0.01, 0.32);
-gunGroup.add(stock);
-
-const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.12), gripRubber);
-cheek.position.set(0, 0.04, 0.30);
-gunGroup.add(cheek);
-
-gunGroup.position.set(0.22, -0.22, -0.50);
+gunGroup.position.set(0.0, 0.0, 0.0);
 camera.add(gunGroup);
 scene.add(camera);
 
@@ -3519,8 +3644,10 @@ function makeHand(parent, gripX, gripY, gripZ, rotX, rotY, rotZ, isFront) {
   return handGroup;
 }
 
-const rifleRightHand = makeHand(gunGroup, 0.0, -0.14, 0.10, -0.25, 0, 0, false);
-const rifleLeftHand  = makeHand(gunGroup, 0.0, -0.02, -0.22, 0.15, 0, 0, true);
+const rifleRightHand = makeHand(gunGroup, 0.0, -0.16, 0.14, -0.3, 0, 0, false);
+const rifleLeftHand  = makeHand(gunGroup, 0.0, -0.04, -0.30, 0.2, 0, 0, true);
+rifleRightHand.visible = false;
+rifleLeftHand.visible = false;
 
 let sgRightHand, sgLeftHand;
 
@@ -3559,80 +3686,44 @@ function updateHandAnim(dt) {
 }
 
 // ─────────────────────────────────────────────
-//  SHOTGUN VIEWMODEL
+//  SHOTGUN VIEWMODEL (uses same SMG model)
 // ─────────────────────────────────────────────
 const sgGroup = new THREE.Group();
 
-const sgWood   = new THREE.MeshLambertMaterial({ color: 0x5c3010 });
-const sgDark   = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-const sgOrange = new THREE.MeshLambertMaterial({ color: 0xcc4400 });
-const sgMetal  = new THREE.MeshLambertMaterial({ color: 0x333333 });
+_gltfLoader.load('../models/fps_animated_smg.glb', (gltf) => {
+  const gun = gltf.scene;
+  gun.scale.setScalar(0.012);
+  gun.rotation.set(0, Math.PI, 0);
+  gun.position.set(0.02, -0.15, -0.15);
+  gun.traverse((child) => {
+    if (child.isMesh) {
+      child.frustumCulled = false;
+      if (child.material) {
+        const matName = (child.material.name || '').toLowerCase();
+        if (matName.includes('arm')) {
+          child.material = new THREE.MeshLambertMaterial({ color: 0xd4a574 });
+        } else {
+          child.material = new THREE.MeshPhongMaterial({
+            color: 0xcccccc,
+            specular: 0xffffff,
+            shininess: 60,
+            emissive: 0x222222,
+          });
+        }
+      }
+    }
+  });
+  sgGroup.add(gun);
+});
 
-const sgStock = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.14, 0.38), sgWood);
-sgStock.position.set(0, 0, 0.22);
-sgGroup.add(sgStock);
-
-const sgRec = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.32), sgMetal);
-sgRec.position.set(0, 0, -0.04);
-sgGroup.add(sgRec);
-
-const sgRib = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.58), sgDark);
-sgRib.position.set(0, 0.095, -0.06);
-sgGroup.add(sgRib);
-
-const sgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.42, 10), sgDark);
-sgBarrel.rotation.x = Math.PI / 2;
-sgBarrel.position.set(0, 0.04, -0.35);
-sgGroup.add(sgBarrel);
-
-const sgTube = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.36, 8), sgDark);
-sgTube.rotation.x = Math.PI / 2;
-sgTube.position.set(0, -0.04, -0.32);
-sgGroup.add(sgTube);
-
-const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 0.18), sgOrange);
-sgPump.position.set(0, 0, -0.28);
-sgGroup.add(sgPump);
-
-for (let i = 0; i < 5; i++) {
-  const lm = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.008, 0.008), sgDark);
-  lm.position.set(0, 0, -0.22 - i * 0.03);
-  sgGroup.add(lm);
-}
-
-const sgMuzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.042, 0.04, 10), sgOrange);
-sgMuzzle.rotation.x = Math.PI / 2;
-sgMuzzle.position.set(0, 0.04, -0.58);
-sgGroup.add(sgMuzzle);
-
-const sgGrip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.18, 0.10), sgWood);
-sgGrip.position.set(0, -0.14, 0.06);
-sgGrip.rotation.x = 0.2;
-sgGroup.add(sgGrip);
-
-const sgTg = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.008, 8, 16, Math.PI), sgDark);
-sgTg.rotation.z = Math.PI;
-sgTg.position.set(0, -0.06, 0.02);
-sgGroup.add(sgTg);
-
-const sgTrig = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.02), sgOrange);
-sgTrig.position.set(0, -0.055, 0.01);
-sgGroup.add(sgTrig);
-
-const sgPort = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.08), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-sgPort.position.set(0.065, 0.04, -0.02);
-sgGroup.add(sgPort);
-
-const sgBead = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), new THREE.MeshBasicMaterial({ color: 0xcc4400 }));
-sgBead.position.set(0, 0.085, -0.54);
-sgGroup.add(sgBead);
-
-sgGroup.position.set(0.24, -0.24, -0.48);
+sgGroup.position.set(0.0, 0.0, 0.0);
 sgGroup.visible = false;
 camera.add(sgGroup);
 
-sgRightHand = makeHand(sgGroup, 0.0, -0.14, 0.08, -0.2, 0, 0, false);
-sgLeftHand  = makeHand(sgGroup, 0.0, -0.02, -0.26, 0.1, 0, 0, true);
+sgRightHand = makeHand(sgGroup, 0.04, -0.08, 0.18, -0.6, 0, 0, false);
+sgLeftHand  = makeHand(sgGroup, -0.02, -0.02, -0.34, 0.3, 0, 0, true);
+sgRightHand.visible = false;
+sgLeftHand.visible = false;
 
 function getMuzzleWorldPos() {
   const activeGroup = currentWeapon.name === 'shotgun' ? sgGroup : gunGroup;
@@ -3986,6 +4077,45 @@ function spawnDamageNumber(bot, dmg, headshot) {
   setTimeout(() => el.remove(), 750);
 }
 
+// PVP damage numbers: blue = shield, white = health, red = headshot
+function spawnDamageNumberPVP(bot, dmg, hitType) {
+  const worldPos = new THREE.Vector3();
+  bot.hpBg.getWorldPosition(worldPos);
+  worldPos.y += 0.3 + Math.random() * 0.25;
+  worldPos.x += (Math.random() - 0.5) * 0.4;
+
+  const projected = worldPos.clone().project(camera);
+  if (projected.z > 1) return;
+
+  const sx = ( projected.x * 0.5 + 0.5) * window.innerWidth;
+  const sy = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+
+  const el = document.createElement('div');
+  el.className = 'dmg-num normal';
+  el.style.left = sx + 'px';
+  el.style.top  = sy + 'px';
+  el.style.transform = 'translate(-50%, -50%)';
+
+  if (hitType === 'shield') {
+    el.style.color = '#44aaff';
+    el.style.textShadow = '0 0 8px #2288ff, 0 1px 3px rgba(0,0,0,0.9)';
+    el.style.fontSize = '14px';
+    el.textContent = dmg;
+  } else if (hitType === 'headshot') {
+    el.style.color = '#ff3333';
+    el.style.textShadow = '0 0 8px #ff0000, 0 1px 3px rgba(0,0,0,0.9)';
+    el.style.fontSize = '17px';
+    el.textContent = '💀 ' + dmg;
+  } else {
+    el.style.color = '#ffffff';
+    el.style.textShadow = '0 0 6px rgba(255,255,255,0.6), 0 1px 3px rgba(0,0,0,0.9)';
+    el.style.fontSize = '14px';
+    el.textContent = dmg;
+  }
+
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 750);
+}
 function damageBotBy(bot, dmg, headshot) {
   bot.hp = Math.max(0, bot.hp - dmg);
   const hpRatio = bot.hp / bot.maxHp;
