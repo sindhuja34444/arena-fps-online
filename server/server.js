@@ -19,8 +19,8 @@ const io = new Server(server, {
 // ─────────────────────────────────────────────
 
 const SPAWNS = [
-  { x: -28, y: 1.7, z: 0, yaw: 0 },
-  { x: 28, y: 1.7, z: 0, yaw: Math.PI }
+  { x: -28, y: 1.7, z: 0, yaw: -Math.PI / 2 },   // west side, facing east (+X)
+  { x: 28, y: 1.7, z: 0, yaw: Math.PI / 2 }       // east side, facing west (-X)
 ];
 
 // roomCode -> waiting socket

@@ -266,6 +266,25 @@
     font-size: 8px; letter-spacing: 1px; color: rgba(255,255,255,0.5);
   }
 
+  /* Heal slot */
+  #heal-slot {
+    width: 60px; height: 60px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(0,255,100,0.4);
+    border-radius: 6px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative; gap: 2px;
+    transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+    box-shadow: 0 0 8px rgba(0,255,100,0.2);
+  }
+  #heal-slot .inv-key { font-size: 9px; position: absolute; top: -8px; left: 50%;
+    transform: translateX(-50%); background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.2); border-radius: 3px;
+    padding: 1px 5px; color: rgba(255,255,255,0.5); letter-spacing: 1px; }
+  #heal-icon { font-size: 20px; line-height: 1; }
+  #heal-count { font-size: 10px; letter-spacing: 2px; color: #44ff88; font-weight: bold; }
+  #heal-slot.empty { opacity: 0.3; border-color: rgba(255,255,255,0.1); box-shadow: none; }
+
   /* Armour active screen tint */
   #armour-overlay {
     position: absolute; inset: 0;
@@ -879,6 +898,12 @@
         </svg>
       </div>
     </div>
+    <!-- Heal slot -->
+    <div id="heal-slot">
+      <div class="inv-key">Q</div>
+      <div id="heal-icon">💊</div>
+      <div id="heal-count">2</div>
+    </div>
   </div>
 
   <div id="armour-overlay"></div>
@@ -932,7 +957,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 // ─────────────────────────────────────────────
 //  SOCKET.IO  — PVP NETWORKING
@@ -949,145 +973,197 @@ const remotePlayers = {};   // id → { mesh, group, hp, shield, hpFill, nameTag
 
 // ── Build a humanoid player model (seen by opponent) ─────────────────────
 // ── Load the GLTF model for each player ──────────────────────────────────
-const _gltfLoader = new THREE.GLTFLoader();
-
-// Build a rifle by loading the Sniper GLTF model
-function buildHandRifle() {
-  const group = new THREE.Group();
-
-  // Load sniper model asynchronously
-  _gltfLoader.load('../models/Sniper_3.gltf', (gltf) => {
-    const gun = gltf.scene;
-    // Bigger scale for third-person visibility
-    gun.scale.setScalar(0.32);
-    // Rotate so barrel points along +Z (model is along X)
-    gun.rotation.set(0, -Math.PI / 2, 0);
-
-    // Brighten materials for visibility
-    gun.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.frustumCulled = false;
-        if (child.material) {
-          if (child.material.color) {
-            const c = child.material.color;
-            c.r = Math.min(1, c.r * 3 + 0.2);
-            c.g = Math.min(1, c.g * 3 + 0.2);
-            c.b = Math.min(1, c.b * 3 + 0.2);
-          }
-          if (child.material.emissive) {
-            child.material.emissive.setRGB(0.05, 0.05, 0.05);
-          }
-          if (child.material.metalness !== undefined) child.material.metalness = 0.3;
-          if (child.material.roughness !== undefined) child.material.roughness = 0.5;
-        }
-      }
-    });
-
-    group.add(gun);
-  });
-
-  return group;
-}
-
+// ── Build block-style opponent player model (same style as bots) ─────────
 function buildRemotePlayerModel(id) {
   const root = new THREE.Group();
 
-  // Damage number anchor (invisible, positioned above head)
-  const dmgAnchor = new THREE.Object3D();
-  dmgAnchor.position.set(0, 2.0, 0);
-  root.add(dmgAnchor);
+  const bodyMat   = new THREE.MeshLambertMaterial({ color: 0x8b2020 });
+  const armorMat  = new THREE.MeshLambertMaterial({ color: 0x5c1010 });
+  const darkMat   = new THREE.MeshLambertMaterial({ color: 0x1a0808 });
+  const skinMat   = new THREE.MeshLambertMaterial({ color: 0xc68642 });
+  const visorMat  = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+  const accentMat = new THREE.MeshBasicMaterial({ color: 0xff4422 });
+  const gunMat    = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const redMat    = new THREE.MeshBasicMaterial({ color: 0xff0000 });
 
-  // Head group for headshot detection
+  // ── Feet / Boots ──────────────────────────────────────────────────────
+  const bootGeo = new THREE.BoxGeometry(0.14, 0.10, 0.22);
+  const leftBoot = new THREE.Mesh(bootGeo, darkMat);
+  const rightBoot = new THREE.Mesh(bootGeo, darkMat);
+  leftBoot.position.set(-0.10, 0.05, 0.02);
+  rightBoot.position.set(0.10, 0.05, 0.02);
+  root.add(leftBoot, rightBoot);
+
+  // ── Legs (longer, thinner — more human) ───────────────────────────────
+  const legGeo = new THREE.BoxGeometry(0.12, 0.72, 0.12);
+  const leftLeg  = new THREE.Mesh(legGeo, darkMat);
+  const rightLeg = new THREE.Mesh(legGeo, darkMat);
+  leftLeg.position.set(-0.10, 0.46, 0);
+  rightLeg.position.set( 0.10, 0.46, 0);
+  root.add(leftLeg, rightLeg);
+
+  // Knee pads
+  [leftLeg, rightLeg].forEach(leg => {
+    const kp = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.08, 0.14), armorMat);
+    kp.position.set(0, -0.08, 0.05);
+    leg.add(kp);
+  });
+
+  // ── Hips / Belt ───────────────────────────────────────────────────────
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.18), darkMat);
+  hips.position.set(0, 0.86, 0);
+  root.add(hips);
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 0.20), armorMat);
+  belt.position.set(0, 0.04, 0);
+  hips.add(belt);
+
+  // ── Torso (taller, narrower) ──────────────────────────────────────────
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.52, 0.20), bodyMat);
+  torso.position.set(0, 1.20, 0);
+  root.add(torso);
+
+  // Chest plate
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.06), armorMat);
+  chest.position.set(0, 0.02, 0.09);
+  torso.add(chest);
+
+  // Chest accent stripe
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.28, 0.02), accentMat);
+  stripe.position.set(0, 0, 0.04);
+  chest.add(stripe);
+
+  // Back plate
+  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.30, 0.04), armorMat);
+  backPlate.position.set(0, 0, -0.09);
+  torso.add(backPlate);
+
+  // Shoulder pads
+  [-0.24, 0.24].forEach(sx => {
+    const sp = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.16), armorMat);
+    sp.position.set(sx, 0.20, 0);
+    torso.add(sp);
+  });
+
+  // ── Arms (longer, more human proportions) ─────────────────────────────
+  const upperArmGeo = new THREE.BoxGeometry(0.10, 0.32, 0.10);
+  const forearmGeo  = new THREE.BoxGeometry(0.09, 0.28, 0.09);
+
+  const leftArm = new THREE.Group();
+  const lUpperArm = new THREE.Mesh(upperArmGeo, bodyMat);
+  lUpperArm.position.set(0, -0.16, 0);
+  leftArm.add(lUpperArm);
+  const lForearm = new THREE.Mesh(forearmGeo, bodyMat);
+  lForearm.position.set(0, -0.44, 0.04);
+  leftArm.add(lForearm);
+  const lHand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 0.08), skinMat);
+  lHand.position.set(0, -0.60, 0.04);
+  leftArm.add(lHand);
+  leftArm.position.set(-0.26, 1.38, 0);
+  root.add(leftArm);
+
+  const rightArm = new THREE.Group();
+  const rUpperArm = new THREE.Mesh(upperArmGeo, bodyMat);
+  rUpperArm.position.set(0, -0.16, 0);
+  rightArm.add(rUpperArm);
+  const rForearm = new THREE.Mesh(forearmGeo, bodyMat);
+  rForearm.position.set(0, -0.44, 0.04);
+  rightArm.add(rForearm);
+  const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 0.08), skinMat);
+  rHand.position.set(0, -0.60, 0.04);
+  rightArm.add(rHand);
+  rightArm.position.set(0.26, 1.38, 0);
+  root.add(rightArm);
+
+  // ── Neck ──────────────────────────────────────────────────────────────
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.10, 8), skinMat);
+  neck.position.set(0, 1.50, 0);
+  root.add(neck);
+
+  // ── Head (rotates with pitch) ─────────────────────────────────────────
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.5, 0);
-  const headHitbox = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.3, 0.3),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
-  headGroup.add(headHitbox);
+  headGroup.position.set(0, 1.62, 0);
   root.add(headGroup);
 
-  // Body hitbox for raycasting
-  const bodyHitbox = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 1.4, 0.4),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
-  bodyHitbox.position.set(0, 0.7, 0);
-  root.add(bodyHitbox);
+  // Helmet
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), armorMat);
+  headGroup.add(helm);
+  // Helmet ridge
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 0.24), darkMat);
+  ridge.position.set(0, 0.14, 0);
+  headGroup.add(ridge);
+  // Visor
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 0.04), visorMat);
+  visor.position.set(0, 0.02, 0.14);
+  headGroup.add(visor);
+  // Chin
+  const chin = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 0.06), darkMat);
+  chin.position.set(0, -0.10, 0.10);
+  headGroup.add(chin);
+  // Ear pieces
+  [-0.15, 0.15].forEach(ex => {
+    const ear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.08), darkMat);
+    ear.position.set(ex, 0, 0);
+    headGroup.add(ear);
+  });
+
+  // ── Gun held at chest ─────────────────────────────────────────────────
+  const gunGrp = new THREE.Group();
+  gunGrp.position.set(0.06, 1.05, 0.24);
+  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.48), gunMat);
+  gunGrp.add(gunBody);
+  const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.20, 8), darkMat);
+  gunBarrel.rotation.x = Math.PI / 2;
+  gunBarrel.position.set(0, 0.03, 0.32);
+  gunGrp.add(gunBarrel);
+  const gunMag = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.10, 0.05), darkMat);
+  gunMag.position.set(0, -0.07, 0);
+  gunGrp.add(gunMag);
+  const gunAccent = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.015, 0.14), redMat);
+  gunAccent.position.set(0, 0.04, -0.08);
+  gunGrp.add(gunAccent);
+  root.add(gunGrp);
+
+  // ── Glowing strips (emissive red, always visible) ─────────────────────
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+
+  // Leg strips (outer side)
+  [leftLeg, rightLeg].forEach((leg, i) => {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.50, 0.04), glowMat);
+    strip.position.set(i === 0 ? -0.06 : 0.06, 0, 0.04);
+    leg.add(strip);
+  });
+
+  // Torso side strips
+  [-0.18, 0.18].forEach(sx => {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.36, 0.04), glowMat);
+    strip.position.set(sx, 0, 0.08);
+    torso.add(strip);
+  });
+
+  // Arm strips
+  [leftArm, rightArm].forEach(arm => {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.24, 0.03), glowMat);
+    strip.position.set(0, -0.30, 0.05);
+    arm.add(strip);
+  });
+
+  // Helmet strip
+  const helmStrip = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.04), glowMat);
+  helmStrip.position.set(0, -0.08, 0.13);
+  headGroup.add(helmStrip);
+
+  // Back spine strip
+  const spineStrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.40, 0.02), glowMat);
+  spineStrip.position.set(0, 0, -0.10);
+  torso.add(spineStrip);
+
+  // ── Damage number anchor ──────────────────────────────────────────────
+  const dmgAnchor = new THREE.Object3D();
+  dmgAnchor.position.set(0, 1.95, 0);
+  root.add(dmgAnchor);
 
   root.position.set(0, 0, 0);
   scene.add(root);
-
-  // Load the GLTF model (browser caches the file after first request)
-  _gltfLoader.load('../models/Swat.gltf', (gltf) => {
-    console.log('Swat model loaded successfully');
-    const model = gltf.scene;
-    // Scale to match game units (~1.7m tall player)
-    model.scale.setScalar(1.0);
-    model.position.set(0, 0, 0);
-
-    let rightHand = null;
-
-    // Brighten materials so the model is visible in the dark arena
-    model.traverse((child) => {
-      // Hide the pistol mesh
-      if (child.name === 'Pistol') {
-        child.visible = false;
-      }
-      // Find right wrist bone to attach rifle
-      if (child.name === 'Wrist.R' || child.name === 'Hand.R') {
-        rightHand = child;
-      }
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        child.frustumCulled = false;
-        if (child.material) {
-          child.material.side = THREE.DoubleSide;
-          // Boost the color brightness significantly
-          if (child.material.color) {
-            const c = child.material.color;
-            c.r = Math.min(1, c.r * 4 + 0.15);
-            c.g = Math.min(1, c.g * 4 + 0.15);
-            c.b = Math.min(1, c.b * 4 + 0.15);
-          }
-          // Add some emissive glow so it's always visible
-          if (child.material.emissive) {
-            child.material.emissive.setRGB(0.08, 0.06, 0.04);
-          }
-          // Reduce metalness/roughness for better light response
-          if (child.material.metalness !== undefined) child.material.metalness = 0.1;
-          if (child.material.roughness !== undefined) child.material.roughness = 0.6;
-        }
-      }
-    });
-
-    // Build a rifle and attach at upper torso, centered for two-handed hold
-    const rifle = buildHandRifle();
-    // Centered on body, at chest height, slightly forward
-    rifle.position.set(0.0, 1.10, 0.22);
-    rifle.rotation.set(0, 0, 0); // horizontal, pointing forward
-    model.add(rifle);
-
-    root.add(model);
-    root.userData.gltfModel = model;
-  }, undefined, (err) => {
-    console.error('Failed to load Swat.gltf:', err);
-    // Fallback: make hitboxes visible so player isn't invisible
-    bodyHitbox.material.visible = true;
-    bodyHitbox.material.color.setHex(0xff2200);
-    bodyHitbox.material.opacity = 0.7;
-    bodyHitbox.material.transparent = true;
-    headHitbox.material.visible = true;
-    headHitbox.material.color.setHex(0xff4400);
-  });
-
-  // Placeholder limbs for walk animation compatibility
-  const leftLeg = new THREE.Object3D();
-  const rightLeg = new THREE.Object3D();
-  const leftArm = new THREE.Object3D();
-  const rightArm = new THREE.Object3D();
 
   return {
     mesh: root, headGroup, leftLeg, rightLeg, leftArm, rightArm,
@@ -1108,10 +1184,7 @@ function removeRemotePlayer(id) {
   delete remotePlayers[id];
 }
 
-// ── Update remote player HP bar (no-op now, HP bar removed) ──────────────
-function updateRemoteHPBar(rp) {
-  // No visible HP bar — damage numbers handle feedback
-}
+function updateRemoteHPBar(rp) {}
 
 // ── Interpolate remote players each frame ────────────────────────────────
 function updateRemotePlayers(dt) {
@@ -1127,18 +1200,18 @@ function updateRemotePlayers(dt) {
 
     // Feet Y = camera Y - PLAYER_HEIGHT
     rp.mesh.position.set(rp.x, rp.y - 1.7, rp.z);
-    rp.mesh.rotation.y = rp.yaw;
+    rp.mesh.rotation.y = rp.yaw + Math.PI;
     rp.headGroup.rotation.x = rp.pitch;
 
-    // Walk animation
+    // Walk animation — taller legs need bigger stride
     const moving = Math.abs(rp.tx - rp.x) > 0.01 || Math.abs(rp.tz - rp.z) > 0.01;
     if (moving) {
-      rp.walkCycle += dt * 6;
-      const sw = Math.sin(rp.walkCycle) * 0.4;
+      rp.walkCycle += dt * 8;
+      const sw = Math.sin(rp.walkCycle) * 0.55;
       rp.leftLeg.rotation.x  =  sw;
       rp.rightLeg.rotation.x = -sw;
-      rp.leftArm.rotation.x  = -sw * 0.5;
-      rp.rightArm.rotation.x =  sw * 0.5;
+      rp.leftArm.rotation.x  = -sw * 0.4;
+      rp.rightArm.rotation.x =  sw * 0.4;
     } else {
       rp.leftLeg.rotation.x  *= 0.85;
       rp.rightLeg.rotation.x *= 0.85;
@@ -1159,16 +1232,38 @@ function checkPVPHit(rayOrigin, rayDir) {
     const meshes = [];
     rp.mesh.traverse(c => {
       if (!c.isMesh) return;
-      // Exclude HP bar, name tag, and other flat planes (PlaneGeometry)
       if (c === rp.hpFill || c === rp.hpBg || c === rp.nameTag) return;
       if (c.geometry && c.geometry.type === 'PlaneGeometry') return;
       meshes.push(c);
     });
     const hits = ray.intersectObjects(meshes, false);
     if (hits.length > 0) {
+      const hitPoint = hits[0].point;
+      // Check if a wall/structure blocks the shot
+      const hitDist = hitPoint.distanceTo(rayOrigin);
+      let blocked = false;
+      const steps = 16;
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const checkDist = hitDist * t;
+        const px = rayOrigin.x + rayDir.x * checkDist;
+        const py = rayOrigin.y + rayDir.y * checkDist;
+        const pz = rayOrigin.z + rayDir.z * checkDist;
+        for (const c of collidables) {
+          if (c.maxY - c.minY < 0.5) continue; // skip very short obstacles
+          if (px > c.minX && px < c.maxX && pz > c.minZ && pz < c.maxZ &&
+              py > c.minY && py < c.maxY) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) break;
+      }
+      if (blocked) return null; // shot blocked by wall
+
       const headshot = hits[0].object === rp.headGroup.children[0] ||
                        hits[0].object.parent === rp.headGroup;
-      return { id: rp.id, headshot, point: hits[0].point };
+      return { id: rp.id, headshot, point: hitPoint };
     }
   }
   return null;
@@ -1286,7 +1381,7 @@ socket.on("pvp:opponentJoined", ({ id, player }) => {
   rp.yaw  = rp.tyaw  = player.yaw   || 0;
   rp.pitch = rp.tpitch = player.pitch || 0;
   rp.mesh.position.set(rp.x, rp.y - 1.7, rp.z);
-  rp.mesh.rotation.y = rp.yaw;
+  rp.mesh.rotation.y = rp.yaw + Math.PI;
   updateOppHPBar(100);
 });
 
@@ -1346,6 +1441,10 @@ socket.on("pvp:start", ({ spawn } = {}) => {
     state.yaw   = spawn.yaw || 0;
     state.pitch = 0;
     state.velocity = { x: 0, y: 0, z: 0 };
+    // Apply rotation immediately so player faces opponent during countdown
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = state.yaw;
+    camera.rotation.x = 0;
   }
 
   // Reset remote player models to their spawns
@@ -1364,6 +1463,9 @@ socket.on("pvp:start", ({ spawn } = {}) => {
   state.playerShield = SETTINGS.PLAYER_SHIELD;
   updateHealthUI();
   document.getElementById('low-health-vignette').style.opacity = '0';
+
+  // Reset heal charges each round
+  resetHealCharges();
 
   // Show score HUD
   updatePVPScoreHUD();
@@ -1390,6 +1492,8 @@ socket.on("pvp:hit", ({ shooterId, damage, headshot, hp, shield }) => {
   updateHealthUI();
   triggerHitFlash();
   Audio.playerHit();
+  // Cancel healing if hit
+  cancelHealChannel();
 
   // Low-health vignette
   const hpPct = state.playerHP / SETTINGS.PLAYER_HP;
@@ -2575,7 +2679,7 @@ let szRegenAccum = 0;
 //  CAPTURE ZONE SYSTEM
 // ─────────────────────────────────────────────
 const CAPTURE_ZONE_RADIUS   = 4;
-const CAPTURE_TIME          = 10;      // seconds to capture
+const CAPTURE_TIME          = 5;       // seconds to capture
 const CAPTURE_SHIELD_REGEN  = 2;       // shield/sec per captured zone
 const CAPTURE_DMG_REDUCTION = 0.25;    // damage reduction per zone (max 3 zones = 0.75)
 const CAPTURE_HP_BONUS      = 20;      // HP/shield max increase per zone
@@ -2704,7 +2808,21 @@ function updateCaptureZones(dt) {
     const dist = Math.sqrt(dx * dx + dz * dz);
     const inside = dist < CAPTURE_ZONE_RADIUS;
 
-    if (!cz.captured && !cz.capturedByOpponent && inside) {
+    // Check if any opponent is also inside this zone (contested)
+    let contested = false;
+    if (pvpMode && inside) {
+      for (const rp of Object.values(remotePlayers)) {
+        if (rp.dead) continue;
+        const odx = rp.x - cz.pos.x;
+        const odz = rp.z - cz.pos.z;
+        if (Math.sqrt(odx * odx + odz * odz) < CAPTURE_ZONE_RADIUS) {
+          contested = true;
+          break;
+        }
+      }
+    }
+
+    if (!cz.captured && !cz.capturedByOpponent && inside && !contested) {
       insideUncapturedZone = true;
       activeZoneIdx = idx;
 
@@ -2761,12 +2879,30 @@ function updateCaptureZones(dt) {
 
   // Check if player is inside an opponent-captured zone
   let insideEnemyZone = false;
+  let insideContestedZone = false;
   if (pvpMode) {
     captureZones.forEach((cz) => {
-      if (!cz.capturedByOpponent) return;
-      const dx = camera.position.x - cz.pos.x;
-      const dz = camera.position.z - cz.pos.z;
-      if (Math.sqrt(dx * dx + dz * dz) < CAPTURE_ZONE_RADIUS) insideEnemyZone = true;
+      if (cz.capturedByOpponent) {
+        const dx = camera.position.x - cz.pos.x;
+        const dz = camera.position.z - cz.pos.z;
+        if (Math.sqrt(dx * dx + dz * dz) < CAPTURE_ZONE_RADIUS) insideEnemyZone = true;
+      }
+      // Check if we're in an uncaptured zone that's contested
+      if (!cz.captured && !cz.capturedByOpponent) {
+        const dx = camera.position.x - cz.pos.x;
+        const dz = camera.position.z - cz.pos.z;
+        if (Math.sqrt(dx * dx + dz * dz) < CAPTURE_ZONE_RADIUS) {
+          for (const rp of Object.values(remotePlayers)) {
+            if (rp.dead) continue;
+            const odx = rp.x - cz.pos.x;
+            const odz = rp.z - cz.pos.z;
+            if (Math.sqrt(odx * odx + odz * odz) < CAPTURE_ZONE_RADIUS) {
+              insideContestedZone = true;
+              break;
+            }
+          }
+        }
+      }
     });
   }
 
@@ -2777,6 +2913,12 @@ function updateCaptureZones(dt) {
     _czProgressLabel.style.color  = '#ff4444';
     _czProgressFill.style.width   = '100%';
     _czProgressFill.style.background = 'linear-gradient(90deg, #880000, #ff4444)';
+  } else if (insideContestedZone) {
+    _czProgressWrap.style.display = 'flex';
+    _czProgressLabel.textContent  = '⚠️ ZONE CONTESTED — CAPTURE BLOCKED';
+    _czProgressLabel.style.color  = '#ffcc00';
+    _czProgressFill.style.width   = '0%';
+    _czProgressFill.style.background = 'linear-gradient(90deg, #886600, #ffcc00)';
   } else if (insideUncapturedZone && activeZoneIdx >= 0) {
     const cz = captureZones[activeZoneIdx];
     const pct = Math.round(cz.captureProgress * 100);
@@ -3564,44 +3706,87 @@ function switchWeapon(weaponKey) {
 // ─────────────────────────────────────────────
 const gunGroup = new THREE.Group();
 
-// Load the SMG GLB as the first-person viewmodel (includes arms holding gun)
-_gltfLoader.load('../models/fps_animated_smg.glb', (gltf) => {
-  const gun = gltf.scene;
-  gun.scale.setScalar(0.012);
-  gun.rotation.set(0, Math.PI, 0);
-  gun.position.set(0.02, -0.15, -0.15);
+const gunMetal   = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+const darkMetal  = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+const accentMetal= new THREE.MeshLambertMaterial({ color: 0xcc1111 });
+const gripRubber = new THREE.MeshLambertMaterial({ color: 0x111111 });
 
-  gun.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = false;
-      child.frustumCulled = false;
-      if (child.material) {
-        const matName = (child.material.name || '').toLowerCase();
-        if (matName.includes('arm')) {
-          child.material = new THREE.MeshLambertMaterial({ color: 0xd4a574 });
-        } else {
-          child.material = new THREE.MeshPhongMaterial({
-            color: 0xcccccc,
-            specular: 0xffffff,
-            shininess: 60,
-            emissive: 0x222222,
-          });
-        }
-      }
-    }
-  });
+const lower = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.48), gunMetal);
+lower.position.set(0, -0.01, -0.02);
+gunGroup.add(lower);
 
-  gunGroup.add(gun);
-}, undefined, (err) => {
-  console.error('Failed to load SMG viewmodel:', err);
-  const fallback = new THREE.Mesh(
-    new THREE.BoxGeometry(0.06, 0.08, 0.50),
-    new THREE.MeshLambertMaterial({ color: 0x333333 })
-  );
-  gunGroup.add(fallback);
+const upper = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.50), darkMetal);
+upper.position.set(0, 0.085, -0.03);
+gunGroup.add(upper);
+
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.42, 12), darkMetal);
+barrel.rotation.x = Math.PI / 2;
+barrel.position.set(0, 0.06, -0.35);
+gunGroup.add(barrel);
+
+const shroud = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), accentMetal);
+shroud.position.set(0, 0.04, -0.22);
+gunGroup.add(shroud);
+
+const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.028, 0.05, 8), accentMetal);
+brake.rotation.x = Math.PI / 2;
+brake.position.set(0, 0.06, -0.58);
+gunGroup.add(brake);
+
+const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.10), gripRubber);
+grip.position.set(0, -0.14, 0.08);
+grip.rotation.x = 0.25;
+gunGroup.add(grip);
+
+const tg = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.008, 8, 16, Math.PI), darkMetal);
+tg.rotation.z = Math.PI;
+tg.position.set(0, -0.06, 0.02);
+gunGroup.add(tg);
+
+const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.02), accentMetal);
+trigger.position.set(0, -0.055, 0.01);
+gunGroup.add(trigger);
+
+const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.08), darkMetal);
+mag.position.set(0, -0.18, 0.03);
+gunGroup.add(mag);
+
+const magBase = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.09), accentMetal);
+magBase.position.set(0, -0.27, 0.03);
+gunGroup.add(magBase);
+
+const rail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.015, 0.38), accentMetal);
+rail.position.set(0, 0.115, -0.08);
+gunGroup.add(rail);
+
+const sightR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.015), darkMetal);
+sightR.position.set(0, 0.13, 0.08);
+gunGroup.add(sightR);
+
+[-0.015, 0.015].forEach(x => {
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.025, 0.008), accentMetal);
+  post.position.set(x, 0.025, 0);
+  sightR.add(post);
 });
 
-gunGroup.position.set(0.0, 0.0, 0.0);
+const sightF = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.01), accentMetal);
+sightF.position.set(0, 0.13, -0.42);
+gunGroup.add(sightF);
+
+const port = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.03, 0.08), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+port.position.set(0.042, 0.085, 0.05);
+gunGroup.add(port);
+
+const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 8), darkMetal);
+stock.rotation.z = Math.PI / 2;
+stock.position.set(0, 0.01, 0.32);
+gunGroup.add(stock);
+
+const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.12), gripRubber);
+cheek.position.set(0, 0.04, 0.30);
+gunGroup.add(cheek);
+
+gunGroup.position.set(0.22, -0.22, -0.50);
 camera.add(gunGroup);
 scene.add(camera);
 
@@ -3644,10 +3829,8 @@ function makeHand(parent, gripX, gripY, gripZ, rotX, rotY, rotZ, isFront) {
   return handGroup;
 }
 
-const rifleRightHand = makeHand(gunGroup, 0.0, -0.16, 0.14, -0.3, 0, 0, false);
-const rifleLeftHand  = makeHand(gunGroup, 0.0, -0.04, -0.30, 0.2, 0, 0, true);
-rifleRightHand.visible = false;
-rifleLeftHand.visible = false;
+const rifleRightHand = makeHand(gunGroup, 0.0, -0.14, 0.10, -0.25, 0, 0, false);
+const rifleLeftHand  = makeHand(gunGroup, 0.0, -0.02, -0.22, 0.15, 0, 0, true);
 
 let sgRightHand, sgLeftHand;
 
@@ -3659,8 +3842,8 @@ function triggerHandRecoil() {
 }
 
 function updateHandAnim(dt) {
-  const moving = (state.keys['KeyW'] || state.keys['KeyS'] ||
-                  state.keys['KeyA'] || state.keys['KeyD']);
+  const moving = (state.keys[KB.moveForward] || state.keys[KB.moveBack] ||
+                  state.keys[KB.moveLeft] || state.keys[KB.moveRight]);
   if (moving) handBobTime += dt * 7;
 
   const bobX = Math.sin(handBobTime) * 0.008;
@@ -3686,44 +3869,80 @@ function updateHandAnim(dt) {
 }
 
 // ─────────────────────────────────────────────
-//  SHOTGUN VIEWMODEL (uses same SMG model)
+//  SHOTGUN VIEWMODEL
 // ─────────────────────────────────────────────
 const sgGroup = new THREE.Group();
 
-_gltfLoader.load('../models/fps_animated_smg.glb', (gltf) => {
-  const gun = gltf.scene;
-  gun.scale.setScalar(0.012);
-  gun.rotation.set(0, Math.PI, 0);
-  gun.position.set(0.02, -0.15, -0.15);
-  gun.traverse((child) => {
-    if (child.isMesh) {
-      child.frustumCulled = false;
-      if (child.material) {
-        const matName = (child.material.name || '').toLowerCase();
-        if (matName.includes('arm')) {
-          child.material = new THREE.MeshLambertMaterial({ color: 0xd4a574 });
-        } else {
-          child.material = new THREE.MeshPhongMaterial({
-            color: 0xcccccc,
-            specular: 0xffffff,
-            shininess: 60,
-            emissive: 0x222222,
-          });
-        }
-      }
-    }
-  });
-  sgGroup.add(gun);
-});
+const sgWood   = new THREE.MeshLambertMaterial({ color: 0x5c3010 });
+const sgDark   = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+const sgOrange = new THREE.MeshLambertMaterial({ color: 0xcc4400 });
+const sgMetal  = new THREE.MeshLambertMaterial({ color: 0x333333 });
 
-sgGroup.position.set(0.0, 0.0, 0.0);
+const sgStock = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.14, 0.38), sgWood);
+sgStock.position.set(0, 0, 0.22);
+sgGroup.add(sgStock);
+
+const sgRec = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.32), sgMetal);
+sgRec.position.set(0, 0, -0.04);
+sgGroup.add(sgRec);
+
+const sgRib = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.58), sgDark);
+sgRib.position.set(0, 0.095, -0.06);
+sgGroup.add(sgRib);
+
+const sgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.42, 10), sgDark);
+sgBarrel.rotation.x = Math.PI / 2;
+sgBarrel.position.set(0, 0.04, -0.35);
+sgGroup.add(sgBarrel);
+
+const sgTube = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.36, 8), sgDark);
+sgTube.rotation.x = Math.PI / 2;
+sgTube.position.set(0, -0.04, -0.32);
+sgGroup.add(sgTube);
+
+const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.10, 0.18), sgOrange);
+sgPump.position.set(0, 0, -0.28);
+sgGroup.add(sgPump);
+
+for (let i = 0; i < 5; i++) {
+  const lm = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.008, 0.008), sgDark);
+  lm.position.set(0, 0, -0.22 - i * 0.03);
+  sgGroup.add(lm);
+}
+
+const sgMuzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.042, 0.04, 10), sgOrange);
+sgMuzzle.rotation.x = Math.PI / 2;
+sgMuzzle.position.set(0, 0.04, -0.58);
+sgGroup.add(sgMuzzle);
+
+const sgGrip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.18, 0.10), sgWood);
+sgGrip.position.set(0, -0.14, 0.06);
+sgGrip.rotation.x = 0.2;
+sgGroup.add(sgGrip);
+
+const sgTg = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.008, 8, 16, Math.PI), sgDark);
+sgTg.rotation.z = Math.PI;
+sgTg.position.set(0, -0.06, 0.02);
+sgGroup.add(sgTg);
+
+const sgTrig = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.02), sgOrange);
+sgTrig.position.set(0, -0.055, 0.01);
+sgGroup.add(sgTrig);
+
+const sgPort = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.08), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+sgPort.position.set(0.065, 0.04, -0.02);
+sgGroup.add(sgPort);
+
+const sgBead = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), new THREE.MeshBasicMaterial({ color: 0xcc4400 }));
+sgBead.position.set(0, 0.085, -0.54);
+sgGroup.add(sgBead);
+
+sgGroup.position.set(0.24, -0.24, -0.48);
 sgGroup.visible = false;
 camera.add(sgGroup);
 
-sgRightHand = makeHand(sgGroup, 0.04, -0.08, 0.18, -0.6, 0, 0, false);
-sgLeftHand  = makeHand(sgGroup, -0.02, -0.02, -0.34, 0.3, 0, 0, true);
-sgRightHand.visible = false;
-sgLeftHand.visible = false;
+sgRightHand = makeHand(sgGroup, 0.0, -0.14, 0.08, -0.2, 0, 0, false);
+sgLeftHand  = makeHand(sgGroup, 0.0, -0.02, -0.26, 0.1, 0, 0, true);
 
 function getMuzzleWorldPos() {
   const activeGroup = currentWeapon.name === 'shotgun' ? sgGroup : gunGroup;
@@ -3888,7 +4107,7 @@ function createMuzzleFlash() {
 }
 
 function shoot() {
-  if (state.reloading || state.gameOver) return;
+  if (state.reloading || state.gameOver || healChanneling) return;
   if (state.ammo <= 0) { Audio.emptyClick(); return; }
   if (currentWeapon.name === 'shotgun') Audio.shotgun(); else Audio.rifle();
   state.ammo--;
@@ -4881,10 +5100,113 @@ function updateBotBullets(dt) {
 }
 
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+//  HEAL ABILITY (G key — 2 charges per round, +30 shield each, 2s channel)
+// ─────────────────────────────────────────────
+const HEAL_AMOUNT = 30;
+const HEAL_MAX_CHARGES = 2;
+const HEAL_CHANNEL_TIME = 2000; // ms
+let healCharges = HEAL_MAX_CHARGES;
+let healChanneling = false;
+let healChannelTimer = 0;
+
+function useHeal() {
+  if (healCharges <= 0 || state.gameOver || gamePaused) return;
+  if (healChanneling || state.reloading) return;
+  // Start channeling
+  healChanneling = true;
+  healChannelTimer = 0;
+  // Show heal progress bar (reuse reload bar style)
+  document.getElementById('reload-bar-wrap').style.display = 'flex';
+  document.getElementById('reload-label').textContent = 'HEALING';
+  document.getElementById('reload-label').style.color = '#44ff88';
+  document.getElementById('reload-bar-fill').style.background = '#44ff88';
+  document.getElementById('reload-bar-fill').style.width = '0%';
+  // Show circular progress on crosshair
+  document.getElementById('reload-crosshair').style.opacity = '1';
+  document.getElementById('crosshair').style.opacity = '0';
+  document.getElementById('crosshair-sg').style.opacity = '0';
+  const arc = document.getElementById('rc-fill-arc');
+  arc.style.stroke = '#44ff88';
+  arc.style.strokeDashoffset = '94.25';
+}
+
+function updateHealChannel(dt) {
+  if (!healChanneling) return;
+  healChannelTimer += dt * 1000;
+  const pct = Math.min(1, healChannelTimer / HEAL_CHANNEL_TIME);
+
+  // Update progress bar
+  document.getElementById('reload-bar-fill').style.width = (pct * 100) + '%';
+  // Update circular crosshair
+  const arc = document.getElementById('rc-fill-arc');
+  arc.style.strokeDashoffset = (94.25 * (1 - pct)).toFixed(2);
+
+  if (pct >= 1) {
+    // Heal complete
+    healChanneling = false;
+    healCharges--;
+    state.playerShield = Math.min(SETTINGS.PLAYER_SHIELD, state.playerShield + HEAL_AMOUNT);
+    updateHealthUI();
+    Audio.shieldPickup();
+    addKillFeed('💊 HEALED! +' + HEAL_AMOUNT + ' SHIELD (' + healCharges + ' left)');
+    updateHealHUD();
+    // Hide progress
+    document.getElementById('reload-bar-wrap').style.display = 'none';
+    document.getElementById('reload-bar-fill').style.width = '0%';
+    document.getElementById('reload-bar-fill').style.background = '#ffcc00';
+    document.getElementById('reload-label').textContent = 'Reloading';
+    document.getElementById('reload-label').style.color = '#aaa';
+    document.getElementById('reload-crosshair').style.opacity = '0';
+    const arc = document.getElementById('rc-fill-arc');
+    arc.style.stroke = '#ffcc00';
+    // Restore crosshair
+    const isShotgun = currentWeapon.name === 'shotgun';
+    document.getElementById('crosshair').style.opacity = isShotgun ? '0' : '1';
+    document.getElementById('crosshair-sg').style.opacity = isShotgun ? '1' : '0';
+  }
+}
+
+function cancelHealChannel() {
+  if (!healChanneling) return;
+  healChanneling = false;
+  document.getElementById('reload-bar-wrap').style.display = 'none';
+  document.getElementById('reload-bar-fill').style.width = '0%';
+  document.getElementById('reload-bar-fill').style.background = '#ffcc00';
+  document.getElementById('reload-label').textContent = 'Reloading';
+  document.getElementById('reload-label').style.color = '#aaa';
+  document.getElementById('reload-crosshair').style.opacity = '0';
+  const arc = document.getElementById('rc-fill-arc');
+  arc.style.stroke = '#ffcc00';
+  const isShotgun = currentWeapon.name === 'shotgun';
+  document.getElementById('crosshair').style.opacity = isShotgun ? '0' : '1';
+  document.getElementById('crosshair-sg').style.opacity = isShotgun ? '1' : '0';
+}
+
+function resetHealCharges() {
+  healCharges = HEAL_MAX_CHARGES;
+  healChanneling = false;
+  healChannelTimer = 0;
+  updateHealHUD();
+}
+
+function updateHealHUD() {
+  const slot = document.getElementById('heal-slot');
+  const count = document.getElementById('heal-count');
+  if (!slot || !count) return;
+  count.textContent = healCharges;
+  if (healCharges <= 0) {
+    slot.classList.add('empty');
+  } else {
+    slot.classList.remove('empty');
+  }
+}
+
+// ─────────────────────────────────────────────
 //  ARMOUR ABILITY
 // ─────────────────────────────────────────────
-const ABILITY_COOLDOWN  = 40;  // seconds to recharge
-const ABILITY_DURATION  = 5;   // seconds active
+const ABILITY_COOLDOWN  = 60;  // seconds to recharge
+const ABILITY_DURATION  = 8;   // seconds active
 const ABILITY_DMG_DIV   = 3;   // damage divided by this while active
 const RING_PERIMETER    = 264; // approx perimeter of 68×68 rounded rect
 
@@ -5112,7 +5434,7 @@ const _right = new THREE.Vector3();
 function updatePlayer(dt) {
   if (!state.running || state.gameOver) return;
 
-  const sprint = state.keys['ShiftLeft'] || state.keys['ShiftRight'];
+  const sprint = state.keys[KB.sprint] || state.keys['ShiftRight'];
   const speed = SETTINGS.PLAYER_SPEED * (sprint ? SETTINGS.SPRINT_MULT : 1.0);
 
   _fwd.set(Math.sin(state.yaw), 0, Math.cos(state.yaw)).negate();
@@ -5120,17 +5442,17 @@ function updatePlayer(dt) {
   _right.negate();
 
   let moveX = 0, moveZ = 0;
-  if (state.keys['KeyW'] || state.keys['ArrowUp'])    { moveX += _fwd.x; moveZ += _fwd.z; }
-  if (state.keys['KeyS'] || state.keys['ArrowDown'])  { moveX -= _fwd.x; moveZ -= _fwd.z; }
-  if (state.keys['KeyA'] || state.keys['ArrowLeft'])  { moveX -= _right.x; moveZ -= _right.z; }
-  if (state.keys['KeyD'] || state.keys['ArrowRight']) { moveX += _right.x; moveZ += _right.z; }
+  if (state.keys[KB.moveForward] || state.keys['ArrowUp'])    { moveX += _fwd.x; moveZ += _fwd.z; }
+  if (state.keys[KB.moveBack]    || state.keys['ArrowDown'])  { moveX -= _fwd.x; moveZ -= _fwd.z; }
+  if (state.keys[KB.moveLeft]    || state.keys['ArrowLeft'])  { moveX -= _right.x; moveZ -= _right.z; }
+  if (state.keys[KB.moveRight]   || state.keys['ArrowRight']) { moveX += _right.x; moveZ += _right.z; }
 
   const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
   if (len > 0) { moveX /= len; moveZ /= len; }
 
   state.velocity.y -= SETTINGS.GRAVITY * dt;
 
-  if ((state.keys['Space']) && state.onGround) {
+  if ((state.keys[KB.jump]) && state.onGround) {
     state.velocity.y = SETTINGS.JUMP_FORCE;
     state.onGround = false;
     Audio.jump();
@@ -5374,6 +5696,19 @@ document.getElementById('pause-leave-btn').addEventListener('click', () => {
   window.location.href = '../menu/menu.html';
 });
 
+// ── Load custom keybinds from localStorage ────────────────────────────────
+const _defaultBinds = {
+  moveForward:'KeyW', moveBack:'KeyS', moveLeft:'KeyA', moveRight:'KeyD',
+  jump:'Space', sprint:'ShiftLeft', reload:'KeyR',
+  weapon1:'Digit1', weapon2:'Digit2', ability:'KeyF', heal:'KeyQ', pickup:'KeyE'
+};
+const KB = (() => {
+  try {
+    const saved = localStorage.getItem('arenaKeybinds');
+    return saved ? { ..._defaultBinds, ...JSON.parse(saved) } : { ..._defaultBinds };
+  } catch(e) { return { ..._defaultBinds }; }
+})();
+
 document.addEventListener('keydown', e => {
   if (e.code === 'Escape') {
     if (gamePaused) resumeGame();
@@ -5381,10 +5716,11 @@ document.addEventListener('keydown', e => {
     return;
   }
   state.keys[e.code] = true;
-  if (e.code === 'KeyR' && state.running && !state.reloading && state.ammo < currentWeapon.maxAmmo) startReload();
-  if (e.code === 'Digit1' && state.running) switchWeapon('rifle');
-  if (e.code === 'Digit2' && state.running) switchWeapon('shotgun');
-  if (e.code === 'KeyF'   && state.running) activateAbility();
+  if (e.code === KB.reload  && state.running && !state.reloading && state.ammo < currentWeapon.maxAmmo) startReload();
+  if (e.code === KB.weapon1 && state.running) switchWeapon('rifle');
+  if (e.code === KB.weapon2 && state.running) switchWeapon('shotgun');
+  if (e.code === KB.ability && state.running) activateAbility();
+  if (e.code === KB.heal    && state.running) useHeal();
   e.preventDefault();
 });
 document.addEventListener('keyup', e => { state.keys[e.code] = false; });
@@ -5409,8 +5745,7 @@ document.addEventListener('mouseup', e => {
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 document.addEventListener('mousemove', e => {
-  if (!state.running || state.gameOver) return;
-  // FIX: Allow look even if pointerLockElement check was too strict in some browsers
+  if (!state.running || state.gameOver || gamePaused) return;
   if (document.pointerLockElement !== canvas) return;
   const sens = 0.0018;
   state.yaw   -= e.movementX * sens;
@@ -5594,6 +5929,7 @@ function loop() {
     updateShieldZone(dt);
     updateCaptureZones(dt);
     updateAbility(dt);
+    updateHealChannel(dt);
     updateArenaAnims(now / 1000);
     updateRemotePlayers(dt);
     tickPVPMove(dt);
