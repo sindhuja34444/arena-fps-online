@@ -5398,15 +5398,17 @@ function startGame() {
     console.log("PVP room code:", roomCode);
 
     // Wait for socket to be connected before joining
-    function emitJoin() {
-      console.log("Emitting pvp:join with code:", roomCode);
-      socket.emit("pvp:join", { roomCode: roomCode });
-    }
-    if (socket.connected) {
-      emitJoin();
-    } else {
-      socket.on("connect", emitJoin);
-    }
+   function emitJoin() {
+  console.log("Emitting pvp:joinRoom with code:", roomCode);
+
+  socket.emit("pvp:joinRoom", roomCode);
+}
+
+if (socket.connected) {
+  emitJoin();
+} else {
+  socket.on("connect", emitJoin);
+}
   }
   document.getElementById('enemies-count').textContent = state.bots.length;
 
