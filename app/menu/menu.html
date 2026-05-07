@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARENA FPS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+  }
+
+  /* Animated background grid */
+  #bg-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.18;
+  }
+
+  .menu-wrap {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    animation: fadeIn 0.6s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Title */
+  .title {
+    font-size: 80px;
+    font-weight: 900;
+    letter-spacing: 18px;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow:
+      0 0 20px rgba(255,255,255,0.4),
+      0 0 60px rgba(200,80,80,0.3);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .title span {
+    color: #cc2222;
+    text-shadow: 0 0 30px rgba(200,30,30,0.8), 0 0 60px rgba(200,30,30,0.4);
+  }
+
+  .subtitle {
+    font-size: 11px;
+    letter-spacing: 6px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+    margin-bottom: 36px;
+  }
+
+  /* High score */
+  .highscore-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 32px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+    padding: 8px 24px;
+  }
+
+  .hs-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+  }
+
+  .hs-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #ffcc00;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px rgba(255,200,0,0.5);
+  }
+
+  /* Mode selector */
+  .mode-wrap {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .mode-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.4);
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px 26px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+
+  .mode-btn:hover {
+    border-color: rgba(255,255,255,0.5);
+    color: rgba(255,255,255,0.75);
+  }
+
+  .mode-btn.active-solo {
+    border-color: #cc2222;
+    color: #ff4444;
+    box-shadow: 0 0 12px rgba(200,30,30,0.3);
+  }
+
+  .mode-btn.active-pvp {
+    border-color: #44aaff;
+    color: #44aaff;
+    box-shadow: 0 0 12px rgba(68,170,255,0.3);
+  }
+
+  .pvp-note {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(68,170,255,0);
+    margin-bottom: 28px;
+    text-transform: uppercase;
+    transition: color 0.3s;
+    height: 16px;
+  }
+
+  .pvp-note.visible {
+    color: rgba(68,170,255,0.6);
+  }
+
+  /* Start button */
+  .start-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    padding: 16px 52px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .start-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0);
+    transition: background 0.2s;
+  }
+
+  .start-btn:hover {
+    border-color: #fff;
+    box-shadow: 0 0 20px rgba(255,255,255,0.15);
+  }
+
+  .start-btn:hover::before {
+    background: rgba(255,255,255,0.06);
+  }
+
+  .start-btn:active {
+    transform: scale(0.97);
+  }
+
+  /* Controls grid */
+  .controls-title {
+    font-size: 9px;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.2);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .controls-grid {
+    display: grid;
+    grid-template-columns: 80px 1fr 80px 1fr;
+    gap: 6px 20px;
+    max-width: 520px;
+  }
+
+  .ctrl-key {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 4px 8px;
+    text-align: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    border-radius: 3px;
+  }
+
+  .ctrl-desc {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    align-self: center;
+    letter-spacing: 1px;
+  }
+
+  /* Version tag */
+  .version {
+    position: fixed;
+    bottom: 16px;
+    right: 20px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.12);
+    text-transform: uppercase;
+  }
+
+  /* New high score flash */
+  .new-hs-badge {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: #ffcc00;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    opacity: 0;
+    animation: hsBadge 0.5s 0.3s ease-out forwards;
+  }
+
+  @keyframes hsBadge {
+    from { opacity: 0; transform: scale(0.8); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="menu-wrap">
+  <div class="title">AR<span>E</span>NA</div>
+  <div class="subtitle">FPS &mdash; Survive the Waves</div>
+
+  <div id="new-hs-badge" class="new-hs-badge" style="display:none">🏆 NEW HIGH SCORE!</div>
+
+  <div class="highscore-wrap">
+    <span class="hs-label">High Score</span>
+    <span class="hs-value" id="hs-value">0</span>
+  </div>
+
+  <div class="mode-wrap">
+    <button class="mode-btn active-solo" id="btn-solo">⚔ Solo vs Bots</button>
+    <button class="mode-btn" id="btn-pvp">🎮 PVP</button>
+  </div>
+  <div class="pvp-note" id="pvp-note">Empty arena — no bots. Use for custom matches.</div>
+
+  <button class="start-btn" id="btn-start">Click to Start</button>
+
+  <div class="controls-title">Controls</div>
+  <div class="controls-grid">
+    <div class="ctrl-key">WASD</div>      <div class="ctrl-desc">Move</div>
+    <div class="ctrl-key">MOUSE</div>     <div class="ctrl-desc">Look around</div>
+    <div class="ctrl-key">LMB</div>       <div class="ctrl-desc">Shoot</div>
+    <div class="ctrl-key">RMB</div>       <div class="ctrl-desc">Aim down sights</div>
+    <div class="ctrl-key">R</div>         <div class="ctrl-desc">Reload</div>
+    <div class="ctrl-key">SPACE</div>     <div class="ctrl-desc">Jump</div>
+    <div class="ctrl-key">SHIFT</div>     <div class="ctrl-desc">Sprint</div>
+    <div class="ctrl-key">F</div>         <div class="ctrl-desc">Armour ability</div>
+    <div class="ctrl-key">1 / 2</div>     <div class="ctrl-desc">Switch weapon</div>
+    <div class="ctrl-key">E</div>         <div class="ctrl-desc">Pick up shield</div>
+    <div class="ctrl-key">ESC</div>       <div class="ctrl-desc">Pause</div>
+    <div class="ctrl-key">ZONES</div>     <div class="ctrl-desc">Capture grey zones</div>
+  </div>
+</div>
+
+<div class="version">Arena FPS v1.0</div>
+
+<script>
+// ── High score ────────────────────────────────────────────────────────────
+const hs = parseInt(localStorage.getItem('arenaHighScore') || '0');
+document.getElementById('hs-value').textContent = hs.toLocaleString();
+
+// Show new-hs badge if flagged by game page
+if (localStorage.getItem('arenaNewHS') === '1') {
+  const badge = document.getElementById('new-hs-badge');
+  badge.style.display = 'block';
+  localStorage.removeItem('arenaNewHS');
+}
+
+// ── Mode selection ────────────────────────────────────────────────────────
+let pvpMode = false;
+
+document.getElementById('btn-solo').addEventListener('click', () => {
+  pvpMode = false;
+  document.getElementById('btn-solo').className = 'mode-btn active-solo';
+  document.getElementById('btn-pvp').className  = 'mode-btn';
+  document.getElementById('pvp-note').classList.remove('visible');
+});
+
+document.getElementById('btn-pvp').addEventListener('click', () => {
+  pvpMode = true;
+  document.getElementById('btn-pvp').className  = 'mode-btn active-pvp';
+  document.getElementById('btn-solo').className = 'mode-btn';
+  document.getElementById('pvp-note').classList.add('visible');
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-start').addEventListener('click', () => {
+  if (pvpMode) {
+    window.location.href = '../arena-pvp/lobby.html';
+  } else {
+    window.location.href = '../arena-bots/index.html';
+  }
+});
+
+// ── Animated background grid ──────────────────────────────────────────────
+const canvas = document.getElementById('bg-canvas');
+const ctx    = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const GRID = 48;
+let offset = 0;
+
+function drawBG() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 0.5;
+
+  const ox = offset % GRID;
+  const oy = offset % GRID;
+
+  for (let x = -GRID + ox; x < W + GRID; x += GRID) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = -GRID + oy; y < H + GRID; y += GRID) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Diagonal accent lines
+  ctx.strokeStyle = 'rgba(200,30,30,0.3)';
+  ctx.lineWidth = 1;
+  for (let i = -H; i < W + H; i += GRID * 4) {
+    ctx.beginPath();
+    ctx.moveTo(i + offset * 0.3, 0);
+    ctx.lineTo(i + H + offset * 0.3, H);
+    ctx.stroke();
+  }
+
+  offset += 0.4;
+  requestAnimationFrame(drawBG);
+}
+drawBG();
+</script>
+</body>
+</html>
