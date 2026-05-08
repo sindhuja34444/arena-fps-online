@@ -11,7 +11,6 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
   #canvas { display: block; width: 100vw; height: 100vh; }
-
   #ui { position: fixed; inset: 0; pointer-events: none; }
 
   /* Crosshair — hip fire (4 separated bars + center dot) */
@@ -442,16 +441,28 @@
 
   /* Kill feed */
   #killfeed {
-    position: absolute; top: 60px; right: 24px;
-    display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+    position: absolute; bottom: 160px; left: 32px;
+    display: flex; flex-direction: column-reverse; gap: 5px; align-items: flex-start;
+    max-height: 180px; overflow: hidden;
   }
   .kill-entry {
-    font-size: 13px; letter-spacing: 1px; color: #ff4444;
-    background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 3px;
-    border-left: 2px solid #ff4444;
-    animation: fadeKill 3s forwards;
+    font-size: 12px; letter-spacing: 1px; color: #fff;
+    background: rgba(0,0,0,0.65); padding: 5px 12px; border-radius: 4px;
+    border-left: 3px solid #ff4444;
+    backdrop-filter: blur(4px);
+    animation: killSlideIn 0.3s ease-out, killFadeOut 4s 0.3s forwards;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    box-shadow: 0 0 8px rgba(255,68,68,0.3);
   }
-  @keyframes fadeKill { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+  @keyframes killSlideIn {
+    0%   { opacity: 0; transform: translateX(-30px) scale(0.9); }
+    100% { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  @keyframes killFadeOut {
+    0%   { opacity: 1; transform: translateX(0); }
+    70%  { opacity: 1; transform: translateX(0); }
+    100% { opacity: 0; transform: translateX(-15px) scale(0.95); }
+  }
 
   /* Screens */
   .screen {
@@ -857,7 +868,7 @@
 
   <div id="inventory">
     <div class="inv-slot active" id="inv-slot-1">
-      <div class="inv-key">1</div>
+      <div class="inv-key" id="hud-key-weapon1">1</div>
       <svg viewBox="0 0 100 36" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="78" y="15" width="20" height="6" rx="3" fill="#1a1a1a"/>
         <rect x="38" y="13" width="42" height="7" rx="1.5" fill="#1a1a1a"/>
@@ -871,7 +882,7 @@
       <div class="inv-label">Rifle</div>
     </div>
     <div class="inv-slot" id="inv-slot-2">
-      <div class="inv-key">2</div>
+      <div class="inv-key" id="hud-key-weapon2">2</div>
       <svg viewBox="0 0 100 36" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="74" y="14" width="24" height="8" rx="3" fill="#2a1a0a"/>
         <rect x="36" y="12" width="42" height="12" rx="2" fill="#3a2a1a"/>
@@ -885,7 +896,7 @@
     </div>
     <!-- Ability slot -->
     <div id="ability-slot" class="ready">
-      <div class="inv-key">F</div>
+      <div class="inv-key" id="hud-key-ability">F</div>
       <div id="ability-icon">🛡</div>
       <div id="ability-timer-text">READY</div>
       <div id="ability-cooldown-ring">
@@ -900,7 +911,7 @@
     </div>
     <!-- Heal slot -->
     <div id="heal-slot">
-      <div class="inv-key">Q</div>
+      <div class="inv-key" id="hud-key-heal">Q</div>
       <div id="heal-icon">💊</div>
       <div id="heal-count">2</div>
     </div>
@@ -910,7 +921,7 @@
   <div id="armour-badge">⚡ ARMOUR ACTIVE</div>
 
   <div id="pickup-prompt">
-    <span class="pk-key">E</span>
+    <span class="pk-key" id="hud-key-pickup">E</span>
     <span class="pk-text">🛡 Pick up Shield (+20)</span>
   </div>
 
@@ -967,6 +978,36 @@
 // PVP mode — always connect to server
 const socket = io("https://arena-fps-server.onrender.com");
 socket.on("connect", () => console.log("PVP connected:", socket.id));
+
+// ── Custom Keybinds (loaded from localStorage) ───────────────────────────
+const _defaultBinds = {
+  moveForward:'KeyW', moveBack:'KeyS', moveLeft:'KeyA', moveRight:'KeyD',
+  jump:'Space', sprint:'ShiftLeft', reload:'KeyR',
+  weapon1:'Digit1', weapon2:'Digit2', ability:'KeyF', heal:'KeyQ', pickup:'KeyE'
+};
+const KB = (() => {
+  try {
+    const saved = localStorage.getItem('arenaKeybinds');
+    const binds = saved ? { ..._defaultBinds, ...JSON.parse(saved) } : { ..._defaultBinds };
+    console.log('Keybinds loaded:', binds);
+    return binds;
+  } catch(e) { return { ..._defaultBinds }; }
+})();
+
+// Update HUD labels to show custom keybinds
+function keyLabel(code) {
+  return (code || '?').replace('Key','').replace('Digit','').replace('ShiftLeft','SHIFT')
+    .replace('ShiftRight','SHIFT').replace('Space','SPACE').replace('ControlLeft','CTRL')
+    .replace('AltLeft','ALT').replace('Tab','TAB').toUpperCase();
+}
+window.addEventListener('load', () => {
+  const el = (id) => document.getElementById(id);
+  if (el('hud-key-weapon1')) el('hud-key-weapon1').textContent = keyLabel(KB.weapon1);
+  if (el('hud-key-weapon2')) el('hud-key-weapon2').textContent = keyLabel(KB.weapon2);
+  if (el('hud-key-ability')) el('hud-key-ability').textContent = keyLabel(KB.ability);
+  if (el('hud-key-heal'))    el('hud-key-heal').textContent    = keyLabel(KB.heal);
+  if (el('hud-key-pickup'))  el('hud-key-pickup').textContent  = keyLabel(KB.pickup);
+});
 
 // ── Remote player registry ────────────────────────────────────────────────
 const remotePlayers = {};   // id → { mesh, group, hp, shield, hpFill, nameTag, ... }
@@ -2114,10 +2155,10 @@ camera.position.set(0, 1.7, 0);
 // ─────────────────────────────────────────────
 //  LIGHTING
 // ─────────────────────────────────────────────
-const ambient = new THREE.AmbientLight(0x223355, 0.6);
+const ambient = new THREE.AmbientLight(0x445577, 1.2);
 scene.add(ambient);
 
-const sun = new THREE.DirectionalLight(0x6677cc, 1.0);
+const sun = new THREE.DirectionalLight(0x8899cc, 1.8);
 sun.position.set(8, 25, 8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -2693,43 +2734,59 @@ const CAPTURE_ZONE_POSITIONS = [
   { x:   0, z:  28 },
 ];
 
-// Build 3D objects for each capture zone
+// Build 3D objects for each capture zone (same style as shield zone)
 const captureZones = CAPTURE_ZONE_POSITIONS.map((pos, idx) => {
   const group = new THREE.Group();
   group.position.set(pos.x, 0, pos.z);
   scene.add(group);
 
-  // Flat cylinder floor disc
-  const floorGeo = new THREE.CylinderGeometry(CAPTURE_ZONE_RADIUS, CAPTURE_ZONE_RADIUS, 0.04, 32);
-  const floorMat = new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.35 });
+  // Flat hex floor fill
+  const floorGeo = new THREE.CylinderGeometry(CAPTURE_ZONE_RADIUS, CAPTURE_ZONE_RADIUS, 0.02, 6);
+  const floorMat = new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.12 });
   const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-  floorMesh.position.y = 0.02;
+  floorMesh.position.y = 0.01;
   group.add(floorMesh);
 
-  // Torus ring border
-  const torusGeo = new THREE.TorusGeometry(CAPTURE_ZONE_RADIUS, 0.08, 8, 48);
+  // Outer border ring
+  const torusGeo = new THREE.TorusGeometry(CAPTURE_ZONE_RADIUS, 0.07, 6, 6);
   const torusMat = new THREE.MeshBasicMaterial({ color: 0x666666, transparent: true, opacity: 0.9 });
   const torusMesh = new THREE.Mesh(torusGeo, torusMat);
   torusMesh.rotation.x = Math.PI / 2;
-  torusMesh.position.y = 0.05;
+  torusMesh.position.y = 0.04;
   group.add(torusMesh);
 
-  // 4 small corner marker pillars at cardinal points of the zone
+  // Inner border ring
+  const innerRingGeo = new THREE.TorusGeometry(CAPTURE_ZONE_RADIUS * 0.6, 0.04, 6, 6);
+  const innerRingMat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.6 });
+  const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
+  innerRing.rotation.x = Math.PI / 2;
+  innerRing.position.y = 0.04;
+  group.add(innerRing);
+
+  // 6 radial accent lines on the floor
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.4 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const lineGeo = new THREE.PlaneGeometry(0.06, CAPTURE_ZONE_RADIUS);
+    const line = new THREE.Mesh(lineGeo, lineMat);
+    line.rotation.x = -Math.PI / 2;
+    line.rotation.z = a;
+    line.position.set(Math.cos(a) * CAPTURE_ZONE_RADIUS / 2, 0.03, Math.sin(a) * CAPTURE_ZONE_RADIUS / 2);
+    group.add(line);
+  }
+
+  // 6 corner diamonds at hex vertices
   const pillarMats = [];
-  const pillarPositions = [
-    { x: CAPTURE_ZONE_RADIUS, z: 0 },
-    { x: -CAPTURE_ZONE_RADIUS, z: 0 },
-    { x: 0, z: CAPTURE_ZONE_RADIUS },
-    { x: 0, z: -CAPTURE_ZONE_RADIUS },
-  ];
-  pillarPositions.forEach(pp => {
-    const pGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.55, 8);
-    const pMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const pGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.5, 4);
+    const pMat = new THREE.MeshBasicMaterial({ color: 0x666666, transparent: true, opacity: 0.85 });
     const pMesh = new THREE.Mesh(pGeo, pMat);
-    pMesh.position.set(pp.x, 0.275, pp.z);
+    pMesh.rotation.y = Math.PI / 4;
+    pMesh.position.set(Math.cos(a) * CAPTURE_ZONE_RADIUS, 0.25, Math.sin(a) * CAPTURE_ZONE_RADIUS);
     group.add(pMesh);
     pillarMats.push(pMat);
-  });
+  }
 
   return {
     pos,
@@ -2737,9 +2794,11 @@ const captureZones = CAPTURE_ZONE_POSITIONS.map((pos, idx) => {
     floorMat,
     torusMat,
     pillarMats,
+    innerRing,
     captured: false,
-    captureProgress: 0,   // 0..1
-    captureAccum: 0,      // seconds accumulated
+    capturedByOpponent: false,
+    captureProgress: 0,
+    captureAccum: 0,
   };
 });
 
@@ -4417,7 +4476,7 @@ function updatePickups(dt) {
   const prompt = document.getElementById('pickup-prompt');
   prompt.style.display = nearbyDrop ? 'flex' : 'none';
 
-  if (nearbyDrop && state.keys['KeyE']) {
+  if (nearbyDrop && state.keys[KB.pickup]) {
     nearbyDrop.picked = true;
     Audio.shieldPickup();
     const restored = Math.min(SHIELD_RESTORE, SETTINGS.PLAYER_SHIELD - state.playerShield);
@@ -5435,7 +5494,8 @@ function updatePlayer(dt) {
   if (!state.running || state.gameOver) return;
 
   const sprint = state.keys[KB.sprint] || state.keys['ShiftRight'];
-  const speed = SETTINGS.PLAYER_SPEED * (sprint ? SETTINGS.SPRINT_MULT : 1.0);
+  const isADS = state.mouseButtons[2];
+  const speed = SETTINGS.PLAYER_SPEED * (sprint ? SETTINGS.SPRINT_MULT : 1.0) * (isADS ? 0.5 : 1.0);
 
   _fwd.set(Math.sin(state.yaw), 0, Math.cos(state.yaw)).negate();
   _right.set(Math.cos(state.yaw), 0, -Math.sin(state.yaw)).negate();
@@ -5697,18 +5757,6 @@ document.getElementById('pause-leave-btn').addEventListener('click', () => {
 });
 
 // ── Load custom keybinds from localStorage ────────────────────────────────
-const _defaultBinds = {
-  moveForward:'KeyW', moveBack:'KeyS', moveLeft:'KeyA', moveRight:'KeyD',
-  jump:'Space', sprint:'ShiftLeft', reload:'KeyR',
-  weapon1:'Digit1', weapon2:'Digit2', ability:'KeyF', heal:'KeyQ', pickup:'KeyE'
-};
-const KB = (() => {
-  try {
-    const saved = localStorage.getItem('arenaKeybinds');
-    return saved ? { ..._defaultBinds, ...JSON.parse(saved) } : { ..._defaultBinds };
-  } catch(e) { return { ..._defaultBinds }; }
-})();
-
 document.addEventListener('keydown', e => {
   if (e.code === 'Escape') {
     if (gamePaused) resumeGame();
