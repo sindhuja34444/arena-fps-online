@@ -1279,101 +1279,57 @@ function updateRemotePlayers(dt) {
 
 // ── Raycasting against remote players ────────────────────────────────────
 function checkPVPHit(rayOrigin, rayDir) {
-console.log("PVP CHECK RUNNING");
   const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 80);
 
-  for (const rp of Object.values(remotePlayers)) {
+  // Collect wall/structure meshes once for occlusion check
+  const structureMeshes = [];
+  scene.traverse(obj => {
+    if (obj.isMesh && obj.geometry && obj.geometry.type === "BoxGeometry") {
+      structureMeshes.push(obj);
+    }
+  });
 
+  for (const rp of Object.values(remotePlayers)) {
     if (rp.dead) continue;
 
     const meshes = [];
-
     rp.mesh.traverse(c => {
-
       if (!c.isMesh) return;
-
-      if (
-        c === rp.hpFill ||
-        c === rp.hpBg ||
-        c === rp.nameTag
-      ) return;
-
-      if (
-        c.geometry &&
-        c.geometry.type === "PlaneGeometry"
-      ) return;
-
+      if (c === rp.hpFill || c === rp.hpBg || c === rp.nameTag) return;
+      if (c.geometry && c.geometry.type === "PlaneGeometry") return;
       meshes.push(c);
     });
 
     const hits = ray.intersectObjects(meshes, true);
+    if (hits.length === 0) continue;
 
-    if (hits.length > 0) {
+    const hitPoint = hits[0].point;
+    const hitDist = hits[0].distance;
 
-      const hitPoint = hits[0].point;
-
-      // WALL BLOCK CHECK
-      const hitDist = hitPoint.distanceTo(rayOrigin);
-
-      let blocked = false;
-
-      const steps = 16;
-
-      for (let i = 1; i < steps; i++) {
-
-        const t = i / steps;
-
-        const checkDist = hitDist * t;
-
-        if (checkDist < 1.0) continue;
-
-        const px = rayOrigin.x + rayDir.x * checkDist;
-        const py = rayOrigin.y + rayDir.y * checkDist;
-        const pz = rayOrigin.z + rayDir.z * checkDist;
-
-        for (const c of collidables) {
-
-          if (c.maxY - c.minY < 0.5) continue;
-
-          if (
-            px > c.minX && px < c.maxX &&
-            pz > c.minZ && pz < c.maxZ &&
-            py > c.minY && py < c.maxY
-          ) {
-
-            blocked = true;
-            break;
-          }
-        }
-
-        if (blocked) break;
-      }
-
-      if (blocked) return null;
-
-      // HEADSHOT CHECK
-      const headshot =
-        hits[0].object === rp.headGroup.children[0] ||
-        hits[0].object.parent === rp.headGroup;
-console.log("PLAYER HIT", rp.id);
-     
-
-      
-
-      showHitmarker(headshot);
-
-      spawnSpark(hitPoint);
-
-      return {
-  id: rp.id,
-  headshot,
-  point: hitPoint
-};
+    // Wall collision check — if a wall is closer than the player, block the shot
+    const wallHits = ray.intersectObjects(structureMeshes, true);
+    if (wallHits.length > 0 && wallHits[0].distance < hitDist) {
+      spawnSpark(wallHits[0].point);
+      return null;
     }
+
+    // Headshot check
+    const headshot =
+      hits[0].object === rp.headGroup.children[0] ||
+      hits[0].object.parent === rp.headGroup;
+
+    return { id: rp.id, headshot, point: hitPoint };
+  }
+
+  // No player hit — check if ray hits a wall for spark effect
+  const wallOnly = ray.intersectObjects(structureMeshes, true);
+  if (wallOnly.length > 0) {
+    spawnSpark(wallOnly[0].point);
   }
 
   return null;
 }
+
 // ── PVP HUD ───────────────────────────────────────────────────────────────
 let pvpHudEl = null;
 function ensurePVPHud() {
