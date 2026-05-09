@@ -1035,6 +1035,38 @@ let state = {
 const Audio = (() => {
   let ctx = null;
   let masterGain = null;
+    const samples = {};
+
+  function loadSample(name, path) {
+
+    const audio = new window.Audio(path);
+
+    audio.preload = "auto";
+
+    samples[name] = audio;
+  }
+
+  function playSample(name, volume = 1.0) {
+
+  const s = samples[name];
+
+  if (!s) {
+    console.log("Missing sample:", name);
+    return;
+  }
+
+  const audio = new window.Audio(s.src);
+
+  audio.volume = volume;
+
+  audio.currentTime = 0;
+
+  audio.play().catch(err => {
+    console.log("Audio failed:", err);
+  });
+}
+
+
 
   function getCtx() {
     if (!ctx) {
@@ -1042,6 +1074,14 @@ const Audio = (() => {
       masterGain = ctx.createGain();
       masterGain.gain.value = 0.7;
       masterGain.connect(ctx.destination);
+      loadSample("rifle", "../audio/rifle.wav");
+
+loadSample("shotgun", "../audio/shotgun.mp3");
+
+loadSample("shotty_reload", "../audio/shotty_reload.wav");
+
+loadSample("ar_reload", "../audio/ar_reload.wav");
+
     }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
@@ -1093,72 +1133,15 @@ const Audio = (() => {
 
   // ── Individual sounds ──────────────────────
 
-  function playRifle() {
-    const c = getCtx(); const t = c.currentTime;
-    // Soft mechanical thwip — short filtered noise burst + gentle sine body
-    const g = c.createGain();
-    g.gain.setValueAtTime(0.0, t);
-    g.gain.linearRampToValueAtTime(0.28, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
-    g.connect(masterGain);
+ function playRifle() {
 
-    const bufSize = Math.ceil(c.sampleRate * 0.13);
-    const buf = c.createBuffer(1, bufSize, c.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-    const src = c.createBufferSource();
-    src.buffer = buf;
-
-    const lp = c.createBiquadFilter();
-    lp.type = 'bandpass';
-    lp.frequency.setValueAtTime(1800, t);
-    lp.frequency.exponentialRampToValueAtTime(400, t + 0.10);
-    lp.Q.value = 1.2;
-
-    src.connect(lp); lp.connect(g);
-    src.start(t); src.stop(t + 0.13);
-
-    // Subtle low body thump
-    osc('sine', 120, t, t + 0.06, 0.18, 0.001);
-    osc('sine',  70, t + 0.01, t + 0.09, 0.12, 0.001);
-  }
+  playSample("rifle", 0.7);
+}
 
   function playShotgun() {
-    const c = getCtx(); const t = c.currentTime;
-    // Smooth whomp — low sine sweep + soft noise, no harsh distortion
-    const g = c.createGain();
-    g.gain.setValueAtTime(0.0, t);
-    g.gain.linearRampToValueAtTime(0.38, t + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    g.connect(masterGain);
 
-    const bufSize = Math.ceil(c.sampleRate * 0.22);
-    const buf = c.createBuffer(1, bufSize, c.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-    const src = c.createBufferSource();
-    src.buffer = buf;
-
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(900, t);
-    lp.frequency.exponentialRampToValueAtTime(180, t + 0.20);
-    lp.Q.value = 0.8;
-
-    src.connect(lp); lp.connect(g);
-    src.start(t); src.stop(t + 0.22);
-
-    // Smooth low-end body
-    const o = c.createOscillator();
-    const og = c.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(90, t);
-    o.frequency.exponentialRampToValueAtTime(38, t + 0.20);
-    og.gain.setValueAtTime(0.30, t);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    o.connect(og); og.connect(masterGain);
-    o.start(t); o.stop(t + 0.22);
-  }
+  playSample("shotgun", 0.9);
+}
 
   function playHit() {
     const c = getCtx(); const t = c.currentTime;
@@ -1182,11 +1165,16 @@ const Audio = (() => {
   }
 
   function playReloadStart() {
-    const c = getCtx(); const t = c.currentTime;
-    // Mag eject click
-    osc('square', 800, t,        t + 0.03, 0.3, 0.001);
-    osc('square', 400, t + 0.03, t + 0.06, 0.2, 0.001);
+
+  if (currentWeapon.name === "shotgun") {
+
+    playSample("shotty_reload", 0.8);
+
+  } else {
+
+    playSample("ar_reload", 0.8);
   }
+}
 
   function playReloadFinish() {
     const c = getCtx(); const t = c.currentTime;
@@ -1377,7 +1365,18 @@ const Audio = (() => {
     osc('sine', 528, t + 0.06, t + 0.16, 0.08, 0.001);
   }
 
+  function unlock() {
+
+  const c = getCtx();
+
+  if (c.state === "suspended") {
+
+    c.resume();
+  }
+}
+
   return {
+    unlock,
     rifle:           playRifle,
     shotgun:         playShotgun,
     hit:             playHit,
@@ -2974,7 +2973,7 @@ const WEAPONS = {
   shotgun: {
     name: 'shotgun',
     maxAmmo: 6,
-    reloadTime: 1400,
+    reloadTime: 1600,
     damage: 21,
     pellets: 5,
     spread: 0.08,
@@ -5068,11 +5067,13 @@ function startGame() {
 // Solo mode — pvpMode is always false
 pvpMode = false;
 localStorage.removeItem('arenaGameMode');
+window.addEventListener('click', () => {
 
-// ── Auto-start when arena page loads ─────────────────────────────────────
-window.addEventListener('load', () => {
+  Audio.unlock();
+
   startGame();
-});
+
+}, { once: true });
 
 // ── Play Again → back to menu ─────────────────────────────────────────────
 document.getElementById('restart-btn').addEventListener('click', () => {
