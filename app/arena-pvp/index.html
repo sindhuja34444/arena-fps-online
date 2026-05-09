@@ -1910,13 +1910,13 @@ function playSample(name, volume = 1.0) {
       masterGain.gain.value = 0.7;
       masterGain.connect(ctx.destination);
 
-      loadSample("rifle", "../audio/rifle.wav");
+    loadSample("rifle", "./audio/rifle.wav");
 
-loadSample("shotgun", "../audio/shotgun.mp3");
+loadSample("shotgun", "./audio/shotgun.mp3");
 
-loadSample("shotgun_reload", "../audio/shotty_reload.wav");
+loadSample("shotty_reload", "./audio/shotty_reload.wav");
 
-loadSample("ar_reload", "../audio/ar_reload.wav");
+loadSample("ar_reload", "./audio/ar_reload.wav");
 
     }
     if (ctx.state === 'suspended') ctx.resume();
