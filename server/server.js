@@ -187,10 +187,13 @@ io.on("connection", (socket) => {
   // ─────────────────────────────────────────────
 
   socket.on("pvp:hit", ({
+    
     targetId,
     damage,
     headshot
+    
   }) => {
+    console.log("SERVER RECEIVED HIT");
 
     const target =
       io.sockets.sockets.get(targetId);
@@ -258,7 +261,7 @@ io.on("connection", (socket) => {
   });
 
   // ─────────────────────────────────────────────
-  // REMATCH
+  // REMATCH (requires both players to agree)
   // ─────────────────────────────────────────────
 
   socket.on("pvp:rematch", () => {
@@ -269,28 +272,31 @@ io.on("connection", (socket) => {
 
     if (!room) return;
 
-    const p1 =
-      io.sockets.sockets.get(room.players[0]);
+    // Track rematch votes
+    if (!room.rematchVotes) room.rematchVotes = new Set();
+    room.rematchVotes.add(socket.id);
 
-    const p2 =
-      io.sockets.sockets.get(room.players[1]);
+    // Notify the other player that this player wants a rematch
+    socket.to(socket.roomId).emit("pvp:rematchRequest", { id: socket.id });
 
-    if (p1) {
-      p1.playerData.hp = 100;
-      p1.playerData.shield = 100;
+    // If both players voted, start the rematch
+    if (room.rematchVotes.size >= 2) {
+      room.rematchVotes.clear();
 
-      p1.emit("pvp:start", {
-        spawn: SPAWNS[0]
-      });
-    }
+      const p1 = io.sockets.sockets.get(room.players[0]);
+      const p2 = io.sockets.sockets.get(room.players[1]);
 
-    if (p2) {
-      p2.playerData.hp = 100;
-      p2.playerData.shield = 100;
+      if (p1) {
+        p1.playerData.hp = 100;
+        p1.playerData.shield = 100;
+        p1.emit("pvp:start", { spawn: SPAWNS[0] });
+      }
 
-      p2.emit("pvp:start", {
-        spawn: SPAWNS[1]
-      });
+      if (p2) {
+        p2.playerData.hp = 100;
+        p2.playerData.shield = 100;
+        p2.emit("pvp:start", { spawn: SPAWNS[1] });
+      }
     }
   });
 

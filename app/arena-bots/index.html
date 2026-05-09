@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -58,20 +57,26 @@
   #crosshair-sg {
     position: absolute; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    width: 28px; height: 28px;
+    width: 36px; height: 36px;
     opacity: 0; pointer-events: none;
-    transition: opacity 0.08s, width 0.08s, height 0.08s;
+    transition: opacity 0.08s, width 0.12s, height 0.12s;
   }
-  #crosshair-sg::before {
-    content: '';
-    position: absolute; inset: 0;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,0.9);
-    box-shadow: 0 0 2px #000, 0 0 4px #000;
+  #crosshair-sg .sg-corner {
+    position: absolute;
+    width: 10px; height: 10px;
+    border-color: rgba(255,255,255,0.9);
+    border-style: solid;
+    border-width: 0;
+    box-shadow: 0 0 2px #000;
+    border-radius: 2px;
   }
+  #crosshair-sg .sg-tl { top: 0; left: 0; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 4px; }
+  #crosshair-sg .sg-tr { top: 0; right: 0; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 4px; }
+  #crosshair-sg .sg-bl { bottom: 0; left: 0; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 4px; }
+  #crosshair-sg .sg-br { bottom: 0; right: 0; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 4px; }
   #crosshair-sg .dot {
     position: absolute; width: 3px; height: 3px; background: #fff;
-    border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    border-radius: 1px; top: 50%; left: 50%; transform: translate(-50%,-50%);
     box-shadow: 0 0 2px #000;
   }
   #crosshair-ads {
@@ -739,7 +744,13 @@
   </div>
 
   <div id="crosshair-ads"><div class="dot"></div></div>
-  <div id="crosshair-sg"><div class="dot"></div></div>
+  <div id="crosshair-sg">
+    <div class="sg-corner sg-tl"></div>
+    <div class="sg-corner sg-tr"></div>
+    <div class="sg-corner sg-bl"></div>
+    <div class="sg-corner sg-br"></div>
+    <div class="dot"></div>
+  </div>
   <div id="ads-vignette"></div>
   <div id="reload-crosshair">
     <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1452,14 +1463,71 @@ const H = SETTINGS.WALL_H;
 const collidables = [];
 
 function makeBox(w, h, d, x, y, z, mat) {
+
   const g = new THREE.BoxGeometry(w, h, d);
+
   const m = new THREE.Mesh(g, mat);
+
   m.position.set(x, y, z);
+
   m.castShadow = true;
   m.receiveShadow = true;
+
   scene.add(m);
-  collidables.push({ minX: x-w/2, maxX: x+w/2, minZ: z-d/2, maxZ: z+d/2, minY: y-h/2, maxY: y+h/2 });
+
+  collidables.push({
+    mesh: m,
+
+    width: w,
+    height: h,
+    depth: d,
+
+    minX: x - w / 2,
+    maxX: x + w / 2,
+
+    minZ: z - d / 2,
+    maxZ: z + d / 2,
+
+    minY: y - h / 2,
+    maxY: y + h / 2
+  });
+
   return m;
+} 
+
+function getSafeSpawnPosition() {
+
+  for (let tries = 0; tries < 100; tries++) {
+
+    const angle = Math.random() * Math.PI * 2;
+    const r = 8 + Math.random() * 12;
+
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+
+    let blocked = false;
+
+    for (const c of collidables) {
+
+      if (
+        x > c.minX - 2 &&
+        x < c.maxX + 2 &&
+        z > c.minZ - 2 &&
+        z < c.maxZ + 2
+      ) {
+
+        blocked = true;
+        break;
+      }
+    }
+
+    if (!blocked) {
+
+      return { x, z };
+    }
+  }
+
+  return { x: 0, z: 0 };
 }
 
 const floorMat = new THREE.MeshLambertMaterial({ color: 0x06060e });
@@ -2309,11 +2377,10 @@ const ENEMY_TYPES = {
 };
 
 function spawnBot(index) {
-  const angle = Math.random() * Math.PI * 2;
-  const r = 8 + Math.random() * 12;
-  const px = Math.cos(angle) * r;
-  const pz = Math.sin(angle) * r;
+ const spawn = getSafeSpawnPosition();
 
+const px = spawn.x;
+const pz = spawn.z;
   const color      = BOT_COLORS[index % BOT_COLORS.length];
   const armorColor = BOT_ARMOR_COL[index % BOT_ARMOR_COL.length];
 
@@ -2512,10 +2579,10 @@ function spawnBot(index) {
 
 function spawnEnemy(typeName, index) {
   const cfg = ENEMY_TYPES[typeName];
-  const angle = Math.random() * Math.PI * 2;
-  const r = 8 + Math.random() * 12;
-  const px = Math.cos(angle) * r;
-  const pz = Math.sin(angle) * r;
+  const spawn = getSafeSpawnPosition();
+
+const px = spawn.x;
+const pz = spawn.z;
 
   const isTank   = typeName === 'tank';
   const isRusher = typeName === 'rusher';
@@ -2906,19 +2973,19 @@ const WEAPONS = {
   },
   shotgun: {
     name: 'shotgun',
-    maxAmmo: 8,
+    maxAmmo: 6,
     reloadTime: 1400,
-    damage: 18,
+    damage: 21,
     pellets: 5,
     spread: 0.08,
-    fireInterval: 0,
+    fireInterval: 600,
     tracerColor: 0xff8800,
     tracerCore: 0xffddaa,
   },
 };
 
 let currentWeapon = WEAPONS.rifle;
-const weaponAmmo = { rifle: 30, shotgun: 8 };
+const weaponAmmo = { rifle: 30, shotgun: 6 };
 
 function switchWeapon(weaponKey) {
   if (state.reloading) return;
@@ -3218,8 +3285,9 @@ function updateGunAnim(dt) {
     document.getElementById('crosshair-ads').style.opacity = adsProgress;
     document.getElementById('crosshair-sg').style.opacity  = '0';
   } else {
-    document.getElementById('crosshair-sg').style.opacity  = 1 - adsProgress;
-    document.getElementById('crosshair-ads').style.opacity = adsProgress;
+    // Shotgun: brackets shrink during ADS instead of disappearing
+    document.getElementById('crosshair-sg').style.opacity  = '1';
+    document.getElementById('crosshair-ads').style.opacity = '0';
     document.getElementById('crosshair').style.opacity     = '0';
   }
   document.getElementById('ads-vignette').style.opacity   = adsProgress * 0.85;
@@ -3350,6 +3418,10 @@ function createMuzzleFlash() {
 function shoot() {
   if (state.reloading || state.gameOver) return;
   if (state.ammo <= 0) { Audio.emptyClick(); return; }
+  // Fire rate limiting
+  const now = performance.now();
+  if (currentWeapon.fireInterval > 0 && now - (state.lastFireTime || 0) < currentWeapon.fireInterval) return;
+  state.lastFireTime = now;
   if (currentWeapon.name === 'shotgun') Audio.shotgun(); else Audio.rifle();
   state.ammo--;
   weaponAmmo[currentWeapon.name] = state.ammo;
@@ -3401,15 +3473,51 @@ function shoot() {
       d.normalize();
     }
     raycaster.set(camera.position, d);
-    const hits = raycaster.intersectObjects(threeObjs, false);
+    const structureMeshes = [];
+
+scene.traverse(obj => {
+
+  if (
+    obj.isMesh &&
+    obj.geometry &&
+    obj.geometry.type === "BoxGeometry" &&
+    !threeObjs.includes(obj)
+  ) {
+
+    structureMeshes.push(obj);
+  }
+});
+
+const hits = raycaster.intersectObjects(
+  [...threeObjs, ...structureMeshes],
+  true
+);
     if (hits.length > 0) {
       const hit = hits[0];
+      const isWallHit =
+  structureMeshes.includes(hit.object) &&
+  !threeObjs.includes(hit.object);
+
+if (isWallHit) {
+
+  spawnSpark(hit.point);
+
+  return;
+}
       const target = targets.find(t => t.mesh === hit.object);
       if (target && !target.bot.dead) {
         const zoneDmgMult = 1 + capturedZoneCount * 0.25;
+        let baseDmg = currentWeapon.damage;
+        // Shotgun damage falloff by distance
+        if (currentWeapon.name === 'shotgun') {
+          const dist = hit.distance || camera.position.distanceTo(hit.point);
+          if (dist > 35) { baseDmg = 0; }
+          else if (dist > 25) { baseDmg = Math.round(baseDmg * 0.25); }
+          else if (dist > 10) { baseDmg = Math.round(baseDmg * 0.45); }
+        }
         const dmg = target.head
-          ? Math.round(currentWeapon.damage * SETTINGS.HEADSHOT_MULT * zoneDmgMult)
-          : Math.round(currentWeapon.damage * zoneDmgMult);
+          ? Math.round(baseDmg * SETTINGS.HEADSHOT_MULT * zoneDmgMult)
+          : Math.round(baseDmg * zoneDmgMult);
         damageBotBy(target.bot, dmg, target.head);
       }
       spawnSpark(hit.point);
@@ -3507,8 +3615,10 @@ function updateCrosshairSpread() {
   const sg = document.getElementById('crosshair-sg');
   ch.style.width  = expanded + 'px';
   ch.style.height = expanded + 'px';
-  const sgBase = 28;
-  const sgExpanded = sgBase + currentSpread * 52;
+  // Shotgun brackets: expand from base (or ADS-shrunk base) + spread
+  const isADS = state.mouseButtons[2];
+  const sgBase = isADS ? 18 : 36;
+  const sgExpanded = sgBase + currentSpread * 40;
   sg.style.width  = sgExpanded + 'px';
   sg.style.height = sgExpanded + 'px';
 }
@@ -4832,9 +4942,9 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 document.addEventListener('mousemove', e => {
   if (!state.running || state.gameOver) return;
-  // FIX: Allow look even if pointerLockElement check was too strict in some browsers
   if (document.pointerLockElement !== canvas) return;
-  const sens = 0.0018;
+  const isADS = state.mouseButtons[2];
+  const sens = isADS ? 0.0005 : 0.0018;
   state.yaw   -= e.movementX * sens;
   state.pitch -= e.movementY * sens;
   state.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, state.pitch));
