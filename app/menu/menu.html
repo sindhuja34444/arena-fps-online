@@ -319,6 +319,41 @@
   .kb-btn:hover { border-color: #fff; color: #fff; }
   .kb-btn.kb-save { border-color: rgba(68,255,136,0.5); color: #44ff88; }
   .kb-btn.kb-save:hover { border-color: #44ff88; box-shadow: 0 0 10px rgba(68,255,136,0.3); }
+
+  /* Player name input */
+  .name-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .name-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+  }
+  .name-input {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    letter-spacing: 2px;
+    color: #fff;
+    width: 180px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .name-input:focus {
+    border-color: rgba(255,255,255,0.5);
+    box-shadow: 0 0 8px rgba(255,255,255,0.1);
+  }
+  .name-input::placeholder {
+    color: rgba(255,255,255,0.2);
+    letter-spacing: 1px;
+  }
 </style>
 </head>
 <body>
@@ -343,6 +378,13 @@
   <div class="pvp-note" id="pvp-note">Empty arena — no bots. Use for custom matches.</div>
 
   <button class="start-btn" id="btn-start">Click to Start</button>
+
+  <!-- Player name input -->
+  <div class="name-wrap">
+    <label class="name-label" for="player-name-input">CALLSIGN</label>
+    <input type="text" id="player-name-input" class="name-input" maxlength="16" placeholder="Enter name..." spellcheck="false" autocomplete="off">
+  </div>
+
   <button class="keybind-btn" id="btn-keybinds">⌨ Customize Keybinds</button>
 
   <div class="controls-title">Controls</div>
@@ -381,6 +423,13 @@
 // ── High score ────────────────────────────────────────────────────────────
 const hs = parseInt(localStorage.getItem('arenaHighScore') || '0');
 document.getElementById('hs-value').textContent = hs.toLocaleString();
+
+// ── Player name ───────────────────────────────────────────────────────────
+const nameInput = document.getElementById('player-name-input');
+nameInput.value = localStorage.getItem('arenaPlayerName') || '';
+nameInput.addEventListener('input', () => {
+  localStorage.setItem('arenaPlayerName', nameInput.value.trim());
+});
 
 // Show new-hs badge if flagged by game page
 if (localStorage.getItem('arenaNewHS') === '1') {

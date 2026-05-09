@@ -991,6 +991,9 @@
 const socket = io("https://arena-fps-server.onrender.com");
 socket.on("connect", () => console.log("PVP connected:", socket.id));
 
+// ── Player Name ──────────────────────────────────────────────────────────
+const playerName = localStorage.getItem('arenaPlayerName') || 'Player';
+
 // ── Custom Keybinds (loaded from localStorage) ───────────────────────────
 const _defaultBinds = {
   moveForward:'KeyW', moveBack:'KeyS', moveLeft:'KeyA', moveRight:'KeyD',
@@ -1671,10 +1674,12 @@ socket.on("pvp:playerDied", ({ deadId, killerId }) => {
     pvpMyScore++;
     Audio.kill();
     Audio.points();
+    addKillFeed(`💀 ${playerName} killed opponent`);
     showRoundResult('+1 KILL', '#44ff88');
   } else if (isSelf) {
     pvpOppScore++;
     Audio.playerHit();
+    addKillFeed(`☠ ${playerName} was killed`);
     showRoundResult('YOU DIED', '#ff4444');
     state.gameOver = true;
   }
@@ -1685,8 +1690,10 @@ socket.on("pvp:playerDied", ({ deadId, killerId }) => {
     const won = pvpMyScore >= PVP_WIN_SCORE;
     const resultHtml = won
       ? `<div style="font-size:48px;letter-spacing:8px;color:#ffcc00;margin-bottom:8px;">VICTORY</div>
+         <div style="font-size:14px;letter-spacing:2px;color:#fff;margin-bottom:6px;">${playerName} WINS</div>
          <div style="font-size:16px;letter-spacing:3px;color:#888;">FINAL SCORE: ${pvpMyScore} — ${pvpOppScore}</div>`
       : `<div style="font-size:48px;letter-spacing:8px;color:#ff3333;margin-bottom:8px;">DEFEATED</div>
+         <div style="font-size:14px;letter-spacing:2px;color:#fff;margin-bottom:6px;">${playerName} LOST</div>
          <div style="font-size:16px;letter-spacing:3px;color:#888;">FINAL SCORE: ${pvpMyScore} — ${pvpOppScore}</div>`;
 
     document.exitPointerLock();

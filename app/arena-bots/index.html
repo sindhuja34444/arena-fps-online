@@ -936,7 +936,7 @@
 <!-- Game Over Screen -->
 <div id="gameover-screen" class="screen" style="display:none">
   <div class="screen-title" style="font-size:52px;letter-spacing:8px;color:#ff3333;margin-bottom:8px">GAME OVER</div>
-  <div class="subtitle">YOU WERE ELIMINATED</div>
+  <div class="subtitle" id="gameover-subtitle">YOU WERE ELIMINATED</div>
   <div class="final-score">SCORE: <span id="final-score-num">0</span></div>
   <div class="final-score" style="font-size:16px; margin-bottom:4px;">KILLS: <span id="final-kills-num" style="color:#ff6644">0</span></div>
   <div class="final-score" style="font-size:16px; margin-bottom:8px;">HIGH SCORE: <span id="final-highscore-num">0</span></div>
@@ -963,6 +963,9 @@ function showPVPOverlay() {}
 function hidePVPOverlay() {}
 function tickPVPMove() {}
 function pvpShoot() {}
+
+// ── Player Name ──────────────────────────────────────────────────────────
+const playerName = localStorage.getItem('arenaPlayerName') || 'Player';
 
 // ── Custom Keybinds (loaded from localStorage) ───────────────────────────
 const _defaultBinds = {
@@ -4014,7 +4017,7 @@ function killBot(bot, headshot) {
   document.getElementById('kills-num').textContent = state.killCount;
 
   const typeLabel = type === 'tank' ? '🛡 TANK' : type === 'rusher' ? '⚡ RUSHER' : '🔴';
-  addKillFeed(headshot ? `💀 HEADSHOT +${pts}` : `${typeLabel} KILL +${pts}`);
+  addKillFeed(headshot ? `💀 ${playerName} HEADSHOT +${pts}` : `${typeLabel} ${playerName} KILL +${pts}`);
   checkWaveComplete();
 }
 
@@ -4869,6 +4872,7 @@ function triggerGameOver() {
   state.gameOver = true;
   Audio.gameOver();
   document.exitPointerLock();
+  document.getElementById('gameover-subtitle').textContent = playerName + ' WAS ELIMINATED';
   document.getElementById('final-score-num').textContent = state.score.toLocaleString();
   document.getElementById('final-kills-num').textContent = state.killCount;
   const isNew = saveHighScore();
